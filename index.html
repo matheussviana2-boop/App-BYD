@@ -167,6 +167,11 @@ button:focus-visible,a:focus-visible,input:focus-visible{outline:3px solid var(-
 .mapnote b{display:block;color:var(--fg);font-size:17px;margin-bottom:6px}
 .mapwrap{position:relative;flex:1;display:flex;flex-direction:column;min-height:0}
 .src{font-size:12px;color:var(--muted);margin-top:4px}
+.seg button:disabled{opacity:.45;cursor:not-allowed}
+.mapoff{margin:8px 2px 0}
+.leaflet-tooltip.lbl{background:#fff;border:1px solid var(--line);border-radius:8px;padding:3px 7px;font-family:var(--f-body);font-size:12px;font-weight:600;color:var(--fg);box-shadow:0 1px 4px rgba(0,0,0,.15);max-width:180px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.leaflet-tooltip.lbl b{color:var(--brand)}
+.leaflet-tooltip.lbl::before{display:none}
 
 </style>
 </head>
@@ -180,8 +185,9 @@ window.__SNAPSHOT__ = {"versao":"16/10/2026","rotas":[{"id":"T1 001","turno":"Tu
 </script>
 <script>
 /* Roteiros BYD · Univale
-   Lista (pontos e horários) + Mapa estático da rota (pontos numerados e trajeto até a BYD).
-   A planilha compartilhada é SÓ LIDA (consulta gviz, sem a coluna de telefone). Nada é gravado nela. */
+   Lista (pontos e horários) + Mapa com os pontos de parada numerados (sem traçado).
+   A planilha compartilhada é SÓ LIDA, via Apps Script. Nada é gravado nela.
+   As coordenadas vêm do Apps Script (Google Maps); o mapa só abre quando todos os pontos da rota foram encontrados. */
 "use strict";
 const CFG = {
   // URL do Apps Script (Implantar > App da Web). Com ela, o app lê a planilha com os horários exatamente como aparecem na tela.
@@ -189,10 +195,7 @@ const CFG = {
   SHEET_ID: "1mmkU8zOFg9mvl4DzYjZPMESsUNO2bKxgHGeHcTngCBo",
   ABAS: [["Turno A", "Turno 1"], ["ADM", "ADM"]],
   DEST: { p: "BYD Camaçari", q: "BYD Auto, Camaçari, Bahia", lat: -12.6905, lon: -38.3225 }, // conferir coordenada do portão
-  GEOCODER: "https://nominatim.openstreetmap.org/search",
-  ROUTER: "https://router.project-osrm.org/route/v1/driving/",   // servidor de demonstração: trocar por OSRM próprio na produção
   TILES: "https://tile.openstreetmap.org/{z}/{x}/{y}.png",
-  VIEWBOX: "-38.80,-12.40,-37.95,-13.10",                            // RMS + Camaçari + Mata de São João
 };
 const EMBED = typeof window.__EMBED__ !== "undefined";             // true quando roda como prévia no claude.ai (sem mapa/GPS)
 
@@ -299,7 +302,7 @@ async function carregarAoVivo() {
     const porTurno = new Map(); d.linhas.forEach(l => { if (!porTurno.has(l[0])) porTurno.set(l[0], []); porTurno.get(l[0]).push(l) });
     const rotas = montarRotas([...porTurno]);
     if (rotas.length < 20) throw new Error("leitura incompleta");
-    return rotas;
+    return { rotas, pontos: d.pontos || {} };
   }
   const out = [];
   for (const [aba, turno] of CFG.ABAS) {
@@ -310,10 +313,15 @@ async function carregarAoVivo() {
   const pax = rotas.flatMap(r => r.stops.flatMap(s => s.pax.map(() => s.t)));
   const ok = pax.filter(Boolean).length / Math.max(1, pax.length);
   if (rotas.length < 20 || ok < 0.95) throw new Error("leitura incompleta da planilha");
-  return rotas;
+  return { rotas, pontos: {} };
 }
 
-let DATA = { rotas: [], fonte: "", quando: "" };
+let DATA = { rotas: [], pontos: {}, fonte: "", quando: "" };
+const ptKey = s => [s.p, s.b, s.c].map(norm).join("|");
+function statusMapa(r) { // quantos pontos da rota têm localização confiável
+  const falta = r.stops.filter(s => { const g = DATA.pontos[ptKey(s)]; return !g || !g[2] }).length;
+  return { ok: falta === 0, falta };
+}
 function prepararRotas(rotas) {
   rotas.forEach(r => {
     r.pax = r.stops.reduce((a, s) => a + s.pax.length, 0);
@@ -326,15 +334,15 @@ function prepararRotas(rotas) {
 async function iniciarDados() {
   const snap = window.__SNAPSHOT__ || await fetch("data.json").then(r => r.json()).catch(() => null);
   const cache = store.get("vivo", null);
-  if (cache) DATA = { rotas: prepararRotas(cache.rotas), fonte: "cache", quando: cache.quando };
-  else if (snap) DATA = { rotas: prepararRotas(snap.rotas), fonte: "copia", quando: snap.versao || "" };
+  if (cache) DATA = { rotas: prepararRotas(cache.rotas), pontos: cache.pontos || {}, fonte: "cache", quando: cache.quando };
+  else if (snap) DATA = { rotas: prepararRotas(snap.rotas), pontos: {}, fonte: "copia", quando: snap.versao || "" };
   render();
   if (EMBED) return;
   try {
-    const rotas = await carregarAoVivo();
+    const { rotas, pontos } = await carregarAoVivo();
     const quando = new Date().toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" });
-    store.set("vivo", { rotas, quando });
-    DATA = { rotas: prepararRotas(rotas), fonte: "vivo", quando };
+    store.set("vivo", { rotas, pontos, quando });
+    DATA = { rotas: prepararRotas(rotas), pontos, fonte: "vivo", quando };
     render();
   } catch (e) {
     DATA.erro = e.message; if (!state.mapa) render();
@@ -403,6 +411,7 @@ const rotaAtual = () => DATA.rotas.find(x => x.id === state.rota);
 function renderRoute() {
   const r = rotaAtual(); if (!r) { state.rota = null; return renderHome() }
   const fav = favs().includes(r.id);
+  const sm = statusMapa(r);
   $("#app").innerHTML = `
   <header class="top"><div class="brand">
     <button class="iconbtn" id="back" aria-label="Voltar para a lista de rotas">${icon.back}Rotas</button>
@@ -416,8 +425,9 @@ function renderRoute() {
   </div>
   <div class="seg vtabs" role="group" aria-label="Visualização">
     <button aria-pressed="true">${icon.list}Pontos e horários</button>
-    <button id="vmapa" aria-pressed="false">${icon.map}Ver no mapa</button>
+    <button id="vmapa" aria-pressed="false" ${sm.ok || EMBED ? "" : "disabled"}>${icon.map}Ver no mapa</button>
   </div>
+  ${sm.ok || EMBED ? "" : `<p class="src mapoff">Mapa indisponível para esta rota: ${sm.falta === r.stops.length ? "os pontos ainda não foram localizados" : sm.falta + " de " + r.stops.length + " pontos não foram localizados com precisão"}.</p>`}
   <ol class="tl">
     ${r.stops.map((s, i) => {
       return `<li class="stop">
@@ -432,51 +442,12 @@ function renderRoute() {
   </ol>`;
   $("#back").onclick = () => { state.rota = null; renderHome(); window.scrollTo(0, 0) };
   $("#fav").onclick = () => { let f = favs(); f = f.includes(r.id) ? f.filter(x => x !== r.id) : [...f, r.id]; store.set("fav", f); renderRoute(); toast(f.includes(r.id) ? "Rota fixada no início" : "Rota removida de Minhas rotas") };
-  $("#vmapa").onclick = () => { state.mapa = true; render() };
+  $("#vmapa").onclick = () => { if (sm.ok || EMBED) { state.mapa = true; render() } };
   document.querySelectorAll(".paxbtn").forEach(b => b.onclick = () => { const i = b.dataset.i; state.open[i] = !state.open[i]; renderRoute() });
 }
 
-/* ---------- geocodificação (com cache no aparelho) ---------- */
-const geoKey = s => "geo:" + norm(s.p + "|" + s.b + "|" + s.c);
-let ultimoGeo = 0;
-async function nominatim(q) {
-  const espera = 1100 - (Date.now() - ultimoGeo); if (espera > 0) await sleep(espera); // política de uso: 1 consulta/s
-  ultimoGeo = Date.now();
-  const u = `${CFG.GEOCODER}?format=jsonv2&limit=1&countrycodes=br&accept-language=pt-BR&bounded=1&viewbox=${CFG.VIEWBOX}&q=${encodeURIComponent(q)}`;
-  const j = await fetch(u, { headers: { "Accept": "application/json" } }).then(r => r.ok ? r.json() : []);
-  return j && j[0] ? [Number(j[0].lat), Number(j[0].lon)] : null;
-}
-async function localizar(s) {
-  const fixo = window.__PONTOS__ && window.__PONTOS__[norm(s.p + "|" + s.b + "|" + s.c)]; // coordenadas conferidas pela operação (pontos.json)
-  if (fixo) return { ll: fixo, approx: false };
-  const c = store.get(geoKey(s), null); if (c) return c;
-  const cid = cidadeStd(s.c);
-  const tentativas = [[`${s.p}, ${s.b}, ${cid}, Bahia`, false], [`${s.p}, ${cid}, Bahia`, false], [`${s.b}, ${cid}, Bahia`, true], [`${cid}, Bahia`, true]];
-  for (const [q, approx] of tentativas) {
-    if (approx) { const kb = "geob:" + norm(q); const cb = store.get(kb, null); if (cb) { const v = { ll: cb, approx: true }; store.set(geoKey(s), v); return v } }
-    let ll = null; try { ll = await nominatim(q) } catch (e) { return null }
-    if (ll) { const v = { ll, approx }; store.set(geoKey(s), v); if (approx) store.set("geob:" + norm(q), ll); return v }
-  }
-  return null;
-}
-
-/* ---------- roteamento (OSRM) e instruções em português ---------- */
-async function rotear(pontos) { // pontos: [[lat,lon],...]
-  const coords = pontos.map(p => p[1].toFixed(6) + "," + p[0].toFixed(6)).join(";");
-  const u = `${CFG.ROUTER}${coords}?overview=full&geometries=geojson&steps=true`;
-  const j = await fetch(u).then(r => r.ok ? r.json() : null);
-  if (!j || j.code !== "Ok") throw new Error("rota indisponível");
-  const rt = j.routes[0];
-  return {
-    linha: rt.geometry.coordinates.map(c => [c[1], c[0]]), dist: rt.distance, dur: rt.duration,
-    legs: rt.legs.map(l => ({
-      dist: l.distance, dur: l.duration,
-      steps: l.steps.map(st => ({ ...st.maneuver, nome: st.name || st.ref || "", dist: st.distance, geo: st.geometry.coordinates.map(c => [c[1], c[0]]), saida: st.maneuver.exit }))
-    }))
-  };
-}
-/* ---------- tela de mapa (estática: só visualização do roteiro) ---------- */
-const mv = { map: null, camadas: null, linha: null, ll: [], approx: [], rota: null, erroRota: false };
+/* ---------- tela de mapa: pontos numerados com nome, na ordem do roteiro ---------- */
+const mv = { map: null };
 function renderMapa() {
   const r = rotaAtual();
   $("#app").innerHTML = `
@@ -485,68 +456,45 @@ function renderMapa() {
       <button class="iconbtn" id="mvoltar" aria-label="Voltar para pontos e horários">${icon.list}Lista</button>
       ${plate(r)}<div class="t"><b>${esc(r.veic)}</b><span>${r.stops.length} paradas · ${r.pax} passageiros</span></div>
     </div>
-    <div class="mapwrap"><div id="map" aria-label="Mapa da rota"></div><div id="mnote"></div></div>
+    <div class="mapwrap"><div id="map" aria-label="Mapa com os pontos de parada"></div><div id="mnote"></div></div>
     <div class="sheet" id="sheet"></div>
   </div>`;
   $("#mvoltar").onclick = () => { state.mapa = false; render() };
   if (EMBED || !window.L) {
-    $("#mnote").innerHTML = `<div class="mapnote"><div><b>O mapa abre no app instalado</b>Esta prévia no navegador do Claude bloqueia mapas externos. No link do app (Netlify) esta tela mostra a rota e os pontos de parada.</div></div>`;
+    $("#mnote").innerHTML = `<div class="mapnote"><div><b>O mapa abre no link do app</b>Esta prévia no navegador do Claude bloqueia mapas externos. No link do GitHub esta tela mostra os pontos de parada numerados.</div></div>`;
     $("#sheet").innerHTML = `<div class="status">Pré-visualização</div>`; return;
   }
-  const map = L.map("map", { zoomControl: true, attributionControl: true }).setView([-12.85, -38.40], 11);
+  const map = L.map("map", { zoomControl: true, attributionControl: true });
   L.tileLayer(CFG.TILES, { maxZoom: 19, attribution: "© OpenStreetMap" }).addTo(map);
-  Object.assign(mv, { map, camadas: L.layerGroup().addTo(map), linha: null, ll: [], approx: [], rota: null, erroRota: false });
-  folha("Localizando os pontos…");
-  prepararMapa(r);
-}
-async function prepararMapa(r) {
-  const id = r.id;
-  for (let i = 0; i < r.stops.length; i++) {
-    const g = await localizar(r.stops[i]);
-    if (state.rota !== id || !state.mapa) return;
-    mv.ll[i] = g ? g.ll : null; mv.approx[i] = g ? g.approx : true;
-    folha(`Localizando os pontos… ${i + 1} de ${r.stops.length}`); desenharMarcadores(r);
-  }
-  mv.ll[r.stops.length] = [CFG.DEST.lat, CFG.DEST.lon];
-  desenharMarcadores(r); enquadrar();
-  try { mv.rota = await rotear(mv.ll.filter(Boolean)); desenharLinha(mv.rota.linha) }
-  catch (e) { mv.erroRota = true; desenharLinha(mv.ll.filter(Boolean), true) }
-  if (state.rota === id && state.mapa) folha();
-}
-function desenharMarcadores(r) {
-  if (!mv.camadas) return; mv.camadas.clearLayers();
+  mv.map = map;
+  const pts = [];
   r.stops.forEach((s, i) => {
-    if (!mv.ll[i]) return;
-    const mk = L.marker(mv.ll[i], { icon: L.divIcon({ className: "", html: `<div class="mk${mv.approx[i] ? " approx" : ""}">${i + 1}</div>`, iconSize: [28, 28], iconAnchor: [14, 14] }) });
-    mk.bindPopup(`<b>${i + 1}. ${esc(s.p)}</b>${esc(s.t)} · ${s.pax.length} passageiro${s.pax.length > 1 ? "s" : ""}<br>${esc(s.b)} · ${esc(s.c)}${mv.approx[i] ? "<br><i>Localização aproximada (bairro)</i>" : ""}`);
-    mv.camadas.addLayer(mk);
+    const g = DATA.pontos[ptKey(s)]; if (!g) return;
+    const ll = [g[0], g[1]]; pts.push(ll);
+    L.marker(ll, { icon: L.divIcon({ className: "", html: `<div class="mk">${i + 1}</div>`, iconSize: [28, 28], iconAnchor: [14, 14] }) })
+      .bindTooltip(`<b>${i + 1}</b> ${esc(s.p)} · ${esc(s.t)}`, { permanent: true, direction: "right", offset: [14, 0], className: "lbl" })
+      .bindPopup(`<b>${i + 1}. ${esc(s.p)}</b>${esc(s.t)} · ${s.pax.length} passageiro${s.pax.length > 1 ? "s" : ""}<br>${esc(s.b)} · ${esc(s.c)}`)
+      .addTo(map);
   });
-  const d = mv.ll[r.stops.length] || [CFG.DEST.lat, CFG.DEST.lon];
-  mv.camadas.addLayer(L.marker(d, { icon: L.divIcon({ className: "", html: `<div class="mk dest">BYD</div>`, iconSize: [34, 34], iconAnchor: [17, 17] }) }).bindPopup("<b>BYD Camaçari</b>Destino final"));
-}
-function desenharLinha(ll, reta) {
-  if (mv.linha) mv.linha.remove();
-  mv.linha = L.polyline(ll, { color: getComputedStyle(document.documentElement).getPropertyValue("--brand").trim() || "#00928a", weight: reta ? 3 : 6, opacity: .85, dashArray: reta ? "6 8" : null }).addTo(mv.map);
-}
-function enquadrar() { const pts = mv.ll.filter(Boolean); if (pts.length && mv.map) mv.map.fitBounds(L.latLngBounds(pts), { padding: [40, 40] }) }
-function folha(msg) {
-  const r = rotaAtual(); const el = $("#sheet"); if (!el || !r) return;
-  const aprox = mv.approx.filter(Boolean).length;
-  el.innerHTML = `
+  const d = [CFG.DEST.lat, CFG.DEST.lon];
+  L.marker(d, { icon: L.divIcon({ className: "", html: `<div class="mk dest">BYD</div>`, iconSize: [34, 34], iconAnchor: [17, 17] }) }).bindPopup("<b>BYD Camaçari</b>Destino final").addTo(map);
+  mv.pts = pts;
+  enquadrar();
+  $("#sheet").innerHTML = `
     <div class="nextrow">
       <div class="num">1</div>
       <div><div class="pb">1ª apanha</div><div class="pn">${esc(r.stops[0].p)}</div><div class="pb">${esc(r.stops[0].b)} · ${esc(r.stops[0].c)}</div></div>
       <div class="tm">${esc(r.ini)}<small>${r.stops.length} paradas</small></div>
     </div>
-    <div class="status">
-      ${msg ? `<span class="pill">${esc(msg)}</span>` : ""}
-      ${mv.rota && !msg ? `<span class="pill">Trajeto estimado: ${fmtDist(mv.rota.dist)} · ${Math.round(mv.rota.dur / 60)} min</span>` : ""}
-      ${mv.erroRota && !msg ? `<span class="pill warn">Trajeto indisponível: linhas retas entre os pontos</span>` : ""}
-      ${aprox && !msg ? `<span class="pill warn">${aprox} ponto${aprox > 1 ? "s" : ""} com localização aproximada</span>` : ""}
-    </div>
-    <div class="ctrls"><button class="btn" id="benq">${icon.map}Ver rota inteira</button></div>
-    <p class="src" style="margin:0">Toque em um ponto numerado para ver o nome, o horário e os passageiros.</p>`;
-  const b = $("#benq"); if (b) b.onclick = enquadrar;
+    <div class="ctrls"><button class="btn" id="benq">${icon.map}Ver os pontos</button><button class="btn" id="bbyd">Mostrar a BYD</button></div>
+    <p class="src" style="margin:0">Os números seguem a ordem do roteiro. Toque em um ponto para ver o horário e os passageiros.</p>`;
+  $("#benq").onclick = () => enquadrar();
+  $("#bbyd").onclick = () => enquadrar(true);
+}
+function enquadrar(comByd) {
+  if (!mv.map || !mv.pts.length) return;
+  const b = L.latLngBounds(mv.pts); if (comByd) b.extend([CFG.DEST.lat, CFG.DEST.lon]);
+  mv.map.fitBounds(b, { padding: [50, 50], maxZoom: 16 });
 }
 
 /* ---------- roteador de telas ---------- */

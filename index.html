@@ -184,6 +184,8 @@ window.__SNAPSHOT__ = {"versao":"16/10/2026","rotas":[{"id":"T1 001","turno":"Tu
    A planilha compartilhada é SÓ LIDA (consulta gviz, sem a coluna de telefone). Nada é gravado nela. */
 "use strict";
 const CFG = {
+  // URL do Apps Script (Implantar > App da Web). Com ela, o app lê a planilha com os horários exatamente como aparecem na tela.
+  API: "https://script.google.com/macros/s/AKfycbw5J5Qco1221P5S7j8oIP52UWWNe1OIhoiC6mdgXQPxdvnpMGAgGT_uTT7yX8FPRMrZ0w/exec",
   SHEET_ID: "1mmkU8zOFg9mvl4DzYjZPMESsUNO2bKxgHGeHcTngCBo",
   ABAS: [["Turno A", "Turno 1"], ["ADM", "ADM"]],
   DEST: { p: "BYD Camaçari", q: "BYD Auto, Camaçari, Bahia", lat: -12.6905, lon: -38.3225 }, // conferir coordenada do portão
@@ -280,7 +282,25 @@ function celula(c) {
   if (typeof c.v === "string" && c.v.startsWith("Date(")) { const n = c.v.match(/\d+/g).map(Number); return String(n[3] || 0).padStart(2, "0") + ":" + String(n[4] || 0).padStart(2, "0") }
   return c.f != null ? c.f : (c.v != null ? c.v : "");
 }
+function jsonp(url) {
+  return new Promise((res, rej) => {
+    const cb = "__a" + Math.random().toString(36).slice(2), s = document.createElement("script");
+    const fim = () => { clearTimeout(to); delete window[cb]; s.remove() };
+    const to = setTimeout(() => { fim(); rej(new Error("tempo esgotado")) }, 25000);
+    window[cb] = d => { fim(); d && d.status === "ok" ? res(d) : rej(new Error("o script respondeu com erro")) };
+    s.onerror = () => { fim(); rej(new Error("sem acesso ao script")) };
+    s.src = url + (url.includes("?") ? "&" : "?") + "callback=" + cb;
+    document.head.appendChild(s);
+  });
+}
 async function carregarAoVivo() {
+  if (CFG.API && CFG.API.startsWith("https://")) {
+    const d = await jsonp(CFG.API);
+    const porTurno = new Map(); d.linhas.forEach(l => { if (!porTurno.has(l[0])) porTurno.set(l[0], []); porTurno.get(l[0]).push(l) });
+    const rotas = montarRotas([...porTurno]);
+    if (rotas.length < 20) throw new Error("leitura incompleta");
+    return rotas;
+  }
   const out = [];
   for (const [aba, turno] of CFG.ABAS) {
     const t = await gvizAba(aba);

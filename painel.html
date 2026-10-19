@@ -57,6 +57,9 @@ button:focus-visible,input:focus-visible,select:focus-visible{outline:3px solid 
 .btn{height:42px;border:1px solid var(--line);background:var(--surface);border-radius:10px;padding:0 14px;font-weight:700;cursor:pointer;display:inline-flex;align-items:center;gap:6px}
 .btn:disabled{opacity:.5}
 .kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:12px;margin-bottom:16px}
+.selt{display:flex;align-items:center;gap:8px;height:42px;padding:0 6px 0 12px;border:1px solid var(--line);border-radius:12px;background:var(--surface)}
+.selt span{font-size:13px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;color:var(--muted)}
+.selt select{height:36px;border:0;background:transparent;font-weight:700;font-size:16px;padding:0 6px;cursor:pointer}
 .kpi{background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:14px 16px}
 .kpi span{display:block;font-size:13px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;color:var(--muted)}
 .kpi b{display:block;font-family:var(--f-num);font-weight:700;font-size:42px;line-height:1.05;font-variant-numeric:tabular-nums;margin-top:4px}
@@ -101,6 +104,13 @@ tr.click{cursor:pointer} tr.click:hover td{background:#f4f9f9}
 .rl button{display:grid;grid-template-columns:auto 1fr auto;gap:10px;align-items:center;text-align:left;border:1px solid var(--line);background:var(--surface);border-radius:12px;padding:8px;cursor:pointer}
 .rl button[aria-pressed="true"]{border-color:var(--brand);box-shadow:0 0 0 2px rgba(18,150,141,.28)}
 .rl .t small{display:block;color:var(--muted);font-size:14px}
+.motr{display:flex;align-items:center;gap:12px;margin-top:12px;padding:10px 14px;border-radius:10px;background:#e8f5f4;border:1px solid #b9e0dc}
+.motr .mi{font-size:22px}
+.motr small{display:block;font-size:12px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;color:var(--muted)}
+.motr b{font-size:19px;color:#0e5f5a}
+.motr b.nd{font-size:16px;color:var(--muted);font-weight:600}
+.motr .em{margin-left:auto;white-space:nowrap;font-size:14px;color:var(--muted);font-variant-numeric:tabular-nums}
+.rl small.mot{color:#0e5f5a;font-weight:600}
 .mini{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px;margin-top:12px}
 @media (max-width:600px){.mini{grid-template-columns:repeat(2,minmax(0,1fr))}}
 .mini div{background:var(--bg);border-radius:10px;padding:8px 10px}
@@ -259,18 +269,18 @@ function renderResumo() {
     <div class="status">${R.carregando ? "Atualizando…" : R.em ? "Atualizado às " + pad(R.em.getHours()) + ":" + pad(R.em.getMinutes()) : ""}</div></div>
   <div class="filters">
     <div class="seg" role="group" aria-label="Período">${[7, 15, 30].map(n => `<button data-dias="${n}" aria-pressed="${R.dias === n}">Últimos ${n} dias</button>`).join("")}</div>
-    <div class="seg" role="group" aria-label="Turno">${["Juntos", "Turno 1", "ADM", "Comparar"].map(m => `<button data-modo="${m}" aria-pressed="${R.modo === m}">${m === "Juntos" ? "Turno 1 + ADM" : m === "Comparar" ? "Comparar turnos" : m}</button>`).join("")}</div>
+    <label class="selt"><span>Turno</span><select id="selModo" aria-label="Turno">${[["Juntos", "Ambos (Turno 1 + ADM)"], ["Turno 1", "Turno 1"], ["ADM", "ADM"], ["Comparar", "Comparar Turno 1 × ADM"]].map(([a, b]) => `<option value="${a}" ${R.modo === a ? "selected" : ""}>${b}</option>`).join("")}</select></label>
     <button class="btn" id="bref" ${R.carregando ? "disabled" : ""}>↻ Atualizar</button>
   </div>
   ${R.erro ? `<div class="banner"><b>Não foi possível atualizar:</b> ${esc(R.erro)}</div>` : ""}
   ${!d ? `<div class="panel empty">${R.carregando ? "Carregando o resumo…" : "Sem dados."}</div>` : `
   ${!diasComDados ? `<div class="banner">Nenhum embarque registrado nos últimos ${R.dias} dias.</div>` : ""}
   <div class="kpis">
-    <div class="kpi"><span>Pontualidade nos pontos</span><b>${v(tot.pont, "%")}</b><small>${tot.paradas} paradas com check no período</small>${cmp("pont")}</div>
-    <div class="kpi"><span>Atraso médio por parada</span><b>${v(tot.atr, " min")}</b><small>em relação ao horário da planilha</small>${cmp("atr")}</div>
-    <div class="kpi"><span>Comparecimento</span><b>${v(tot.comp, "%")}</b><small>passageiros da lista que embarcaram</small>${cmp("comp")}</div>
-    <div class="kpi"><span>Ocupação média</span><b>${v(tot.ocup, "%")}</b><small>embarques ÷ lugares dos veículos</small>${cmp("ocup")}</div>
-    <div class="kpi"><span>Embarques no período</span><b>${tot.emb.toLocaleString("pt-BR")}</b><small>${tot.fora} fora da lista · ${diasComDados} dia${diasComDados === 1 ? "" : "s"} com registro</small></div>
+    <div class="kpi"><span>Pontualidade nos pontos</span><b>${v(tot.pont, "%")}</b>${cmp("pont")}</div>
+    <div class="kpi"><span>Atraso médio por parada</span><b>${v(tot.atr, " min")}</b>${cmp("atr")}</div>
+    <div class="kpi"><span>Comparecimento</span><b>${v(tot.comp, "%")}</b>${cmp("comp")}</div>
+    <div class="kpi"><span>Ocupação média</span><b>${v(tot.ocup, "%")}</b>${cmp("ocup")}</div>
+    <div class="kpi"><span>Embarques no período</span><b>${tot.emb.toLocaleString("pt-BR")}</b></div>
   </div>
   <div class="charts">
     ${graf("pont", "Pontualidade por dia", "% das paradas com primeiro check até " + TOL + " min do horário.", { max: 100, suf: "%" })}
@@ -280,7 +290,7 @@ function renderResumo() {
   </div>
   ${dist}${rank}`}`;
   document.querySelectorAll("[data-dias]").forEach(b => b.onclick = () => { R.dias = +b.dataset.dias; store.set("dias", R.dias); R.d = null; carregarResumo(true) });
-  document.querySelectorAll("[data-modo]").forEach(b => b.onclick = () => { R.modo = b.dataset.modo; store.set("modo", R.modo); render() });
+  const sm = $("#selModo"); if (sm) sm.onchange = () => { R.modo = sm.value; store.set("modo", R.modo); render() };
   const bref = $("#bref"); if (bref) bref.onclick = () => carregarResumo(true);
   const bt = $("#btodas"); if (bt) bt.onclick = () => { R.todas = !R.todas; render() };
   document.querySelectorAll("th[data-k]").forEach(th => th.onclick = () => { const k = th.dataset.k; R.ordem = { k, dir: R.ordem.k === k ? -R.ordem.dir : (["pont", "rota", "turno", "comp", "ocup"].includes(k) ? 1 : -1) }; render() });
@@ -317,7 +327,7 @@ function montar(d) {
       s.d = s.real != null && mm(s.t) != null ? s.real - mm(s.t) : null; s.s = st(s.d);
     });
     const lista = stops.reduce((a, s) => a + s.pax.length, 0), emb = stops.reduce((a, s) => a + s.e, 0), reg = stops.filter(s => s.d != null), cap = CAP[X.veic] || 0;
-    return { ...X, stops, lista, emb, nf: fora.length, ativa: reg.length > 0, cap,
+    return { ...X, stops, lista, emb, nf: fora.length, ativa: reg.length > 0, cap, resp: (d.resp || {})[X.id] || null,
       pont: reg.length ? pct(reg.filter(s => s.s === "ok").length, reg.length) : null,
       atrMed: reg.length ? Math.round(reg.reduce((a, s) => a + Math.max(0, s.d), 0) / reg.length) : null,
       ocup: reg.length && cap ? pct(emb + fora.length, cap) : null, ini: stops[0] && stops[0].t };
@@ -344,18 +354,18 @@ function renderRotas() {
   ${R.erro ? `<div class="banner"><b>Não foi possível atualizar:</b> ${esc(R.erro)}</div>` : ""}
   ${!R.res ? `<div class="panel empty">${R.carregando ? "Carregando os dados do dia…" : "Sem dados."}</div>` : `
   <div class="kpis">
-    <div class="kpi"><span>Pontualidade nos pontos</span><b>${v(k.pont, "%")}</b><small>${par.length} paradas com check</small></div>
-    <div class="kpi"><span>Atraso médio por parada</span><b>${v(k.atr, " min")}</b><small>em relação ao horário da planilha</small></div>
-    <div class="kpi"><span>Comparecimento</span><b>${v(k.comp, "%")}</b><small>${k.emb} de ${k.lista} passageiros da lista</small></div>
-    <div class="kpi"><span>Ocupação média</span><b>${v(k.ocup, "%")}</b><small>embarques ÷ lugares dos veículos</small></div>
-    <div class="kpi"><span>Rotas com registro</span><b>${at.length}<small>/${rs.length}</small></b><small>${k.fora} fora da lista</small></div>
+    <div class="kpi"><span>Pontualidade nos pontos</span><b>${v(k.pont, "%")}</b></div>
+    <div class="kpi"><span>Atraso médio por parada</span><b>${v(k.atr, " min")}</b></div>
+    <div class="kpi"><span>Comparecimento</span><b>${v(k.comp, "%")}</b></div>
+    <div class="kpi"><span>Ocupação média</span><b>${v(k.ocup, "%")}</b></div>
+    <div class="kpi"><span>Rotas com registro</span><b>${at.length}<small>/${rs.length}</small></b></div>
   </div>
   ${R.res.registros === 0 ? `<div class="banner">Nenhum embarque registrado em ${ddmm(R.data)} até agora.</div>` : ""}
   <div class="md">
     <div class="side">
       <input type="search" id="q" placeholder="Buscar rota ou ponto" value="${esc(R.q)}" aria-label="Buscar rota ou ponto">
       <select id="ord" aria-label="Ordenar rotas">${[["pont", "Pior pontualidade primeiro"], ["atraso", "Maior atraso médio"], ["ocup", "Menor ocupação"], ["ini", "Horário da 1ª apanha"], ["rota", "Número da rota"]].map(([a, b]) => `<option value="${a}" ${R.ordem === a ? "selected" : ""}>${b}</option>`).join("")}</select>
-      <div class="rl">${lista.map(x => `<button data-r="${esc(x.id)}" aria-pressed="${x.id === R.sel}">${plate(x.id)}<span class="t"><b>${esc(x.veic || "—")}</b><small>${x.ativa ? x.emb + "/" + x.lista + " embarcaram" : "sem registro · " + x.lista + " na lista"}</small></span>${x.ativa ? pPont(x.pont) : ""}</button>`).join("") || `<div class="empty">Nenhuma rota encontrada.</div>`}</div>
+      <div class="rl">${lista.map(x => `<button data-r="${esc(x.id)}" aria-pressed="${x.id === R.sel}">${plate(x.id)}<span class="t"><b>${esc(x.veic || "—")}</b><small>${x.ativa ? x.emb + "/" + x.lista + " embarcaram" : "sem registro · " + x.lista + " na lista"}</small>${x.resp ? `<small class="mot">Motorista: ${esc(x.resp[0])}</small>` : ""}</span>${x.ativa ? pPont(x.pont) : ""}</button>`).join("") || `<div class="empty">Nenhuma rota encontrada.</div>`}</div>
     </div>
     ${r ? detalhe(r, R.res.emb) : `<div class="panel empty">Escolha uma rota.</div>`}
   </div>`}`;
@@ -368,9 +378,11 @@ function renderRotas() {
   const qi = $("#q"); if (qi) qi.oninput = e => { R.q = e.target.value; const p = qi.selectionStart; render(); const n = $("#q"); n.focus(); try { n.setSelectionRange(p, p) } catch (_) { } };
   document.querySelectorAll(".rl button").forEach(b => b.onclick = () => { R.sel = b.dataset.r; render() });
 }
+function hhmm(v) { if (!v) return "—"; const m = String(v).match(/(\d{1,2}):(\d{2})/); if (/T/.test(v)) { const d = new Date(v); if (!isNaN(d)) return pad(d.getHours()) + ":" + pad(d.getMinutes()) } return m ? pad(+m[1]) + ":" + m[2] : String(v) }
 function detalhe(r, emb) {
   const hm = x => x == null ? "—" : pad(Math.floor(x / 60)) + ":" + pad(x % 60);
   return `<div class="panel"><div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap">${plate(r.id)}<div><h3>${esc(r.veic || "—")} · ${esc(r.turno)}${r.emp ? " · " + esc(r.emp) : ""}</h3><p class="d">${r.stops.length} paradas · 1ª apanha ${esc(r.ini || "—")}${r.cap ? " · " + r.cap + " lugares" : ""}</p></div></div>
+    <div class="motr">${r.resp ? `<span class="mi">👤</span><span><small>Motorista responsável</small><b>${esc(r.resp[0])}</b></span><span class="em">assumiu às ${esc(hhmm(r.resp[2]))}</span>` : `<span class="mi">👤</span><span><small>Motorista responsável</small><b class="nd">Nenhum motorista assumiu esta rota</b></span>`}</div>
     <div class="mini"><div><span>Pontualidade</span><b>${r.pont == null ? "—" : r.pont + "%"}</b></div><div><span>Embarcaram</span><b>${r.emb}/${r.lista}</b></div><div><span>Ocupação</span><b>${r.ocup == null ? "—" : r.ocup + "%"}</b></div><div><span>Fora da lista</span><b>${r.nf}</b></div></div>
     <div class="tw" style="margin-top:12px"><table><thead><tr><th>#</th><th>Ponto</th><th class="num">Previsto</th><th class="num">1º check</th><th>Situação</th><th>Passageiros</th></tr></thead><tbody>
     ${r.stops.map((s, i) => `<tr><td><b>${i + 1}</b></td><td style="min-width:170px"><b>${esc(s.p)}</b><div style="font-size:13px;color:var(--muted)">${esc(s.b)}</div></td><td class="num"><span class="hora">${esc(s.t)}</span></td><td class="num"><span class="hora">${hm(s.real)}</span></td>

@@ -380,7 +380,7 @@ function renderRotas() {
     <div class="side">
       <input type="search" id="q" placeholder="Buscar rota ou ponto" value="${esc(R.q)}" aria-label="Buscar rota ou ponto">
       <select id="ord" aria-label="Ordenar rotas">${[["pont", "Pior pontualidade primeiro"], ["atraso", "Maior atraso médio"], ["ocup", "Menor ocupação"], ["ini", "Horário da 1ª apanha"], ["rota", "Número da rota"]].map(([a, b]) => `<option value="${a}" ${R.ordem === a ? "selected" : ""}>${b}</option>`).join("")}</select>
-      <div class="rl">${lista.map(x => `<button data-r="${esc(x.id)}" aria-pressed="${x.id === R.sel}">${plate(x.id)}<span class="t"><b>${esc(x.veic || "—")}</b><small>${x.ativa ? x.emb + "/" + x.lista + " embarcaram" : "sem registro · " + x.lista + " na lista"}</small>${x.resp ? `<small class="mot">Motorista: ${esc(x.resp[0])}</small>` : ""}</span>${x.ativa ? pPont(x.pont) : ""}</button>`).join("") || `<div class="empty">Nenhuma rota encontrada.</div>`}</div>
+      <div class="rl">${lista.map(x => `<button data-r="${esc(x.id)}" aria-pressed="${x.id === R.sel}">${plate(x.id)}<span class="t"><b>${esc(x.veic || "—")}</b><small>${x.ativa ? x.emb + "/" + x.lista + " embarcaram" : "sem registro · " + x.lista + " na lista"}</small></span>${x.ativa ? pPont(x.pont) : ""}</button>`).join("") || `<div class="empty">Nenhuma rota encontrada.</div>`}</div>
     </div>
     ${r ? detalhe(r, R.res.emb) : `<div class="panel empty">Escolha uma rota.</div>`}
   </div>`}`;
@@ -429,7 +429,7 @@ async function exportarExcel(rotas, nomeArq, data) {
     y++;
     for (const r of [...lista].sort((a, b) => a.id.localeCompare(b.id, "pt", { numeric: true }))) {
       linhaCheia(r.id + " · " + (r.veic || "—") + (r.emp ? " · " + r.emp : "") + (r.cap ? " · " + r.cap + " lugares" : ""), { font: { bold: true, size: 13, color: { argb: "FFFFFFFF" } }, fill: fill("0E7F78") }, 26);
-      linhaCheia("Motorista: " + (r.resp ? r.resp[0] + " (assumiu às " + hhmm(r.resp[2]) + ")" : "nenhum motorista assumiu") + "   ·   Pontualidade: " + (r.pont == null ? "—" : r.pont + "%") + "   ·   Embarcaram: " + r.emb + "/" + r.lista + "   ·   Ocupação: " + (r.ocup == null ? "—" : r.ocup + "%") + "   ·   Fora da lista: " + r.nf, { font: { bold: true, size: 11, color: { argb: "FF0E5F5A" } }, fill: fill("E8F5F4") });
+      linhaCheia("Pontualidade: " + (r.pont == null ? "—" : r.pont + "%") + "   ·   Embarcaram: " + r.emb + "/" + r.lista + "   ·   Ocupação: " + (r.ocup == null ? "—" : r.ocup + "%") + "   ·   Fora da lista: " + r.nf, { font: { bold: true, size: 11, color: { argb: "FF0E5F5A" } }, fill: fill("E8F5F4") });
       const cab = ws.getRow(y); COLS.forEach(([t], i) => { const c = cab.getCell(i + 1); c.value = t; c.font = { bold: true, size: 10, color: { argb: "FF4B5563" } }; c.fill = fill("EEF2F4"); c.alignment = CENTRO; c.border = borda }); cab.height = 20; y++;
       r.stops.forEach((s, i) => {
         const pax = s.pax.map(p => { const h = emb[p.ref]; return [p.n, h ? "Embarcou" : r.ativa ? "Não embarcou" : "Sem registro", h || "—"] }).concat(s.fora.map(f => [f.nome, "Fora da lista", f.hora || "—"]));
@@ -456,7 +456,6 @@ function hhmm(v) { if (!v) return "—"; const m = String(v).match(/(\d{1,2}):(\
 function detalhe(r, emb) {
   const hm = x => x == null ? "—" : pad(Math.floor(x / 60)) + ":" + pad(x % 60);
   return `<div class="panel det"><div class="dtop"><span></span><div class="dh">${plate(r.id)}<div><h3>${esc(r.veic || "—")} · ${esc(r.turno)}${r.emp ? " · " + esc(r.emp) : ""}</h3><p class="d">${r.stops.length} paradas · 1ª apanha ${esc(r.ini || "—")}${r.cap ? " · " + r.cap + " lugares" : ""}</p></div></div><button class="btn xl xr" id="bexpr" ${S.rot.exportando ? "disabled" : ""}>${S.rot.exportando === "rota" ? "Gerando Excel…" : "⬇ Exportar rota " + esc(r.id)}</button></div>
-    <div class="motr">${r.resp ? `<span class="mi">👤</span><span><small>Motorista responsável</small><b>${esc(r.resp[0])}</b></span><span class="em">assumiu às ${esc(hhmm(r.resp[2]))}</span>` : `<span class="mi">👤</span><span><small>Motorista responsável</small><b class="nd">Nenhum motorista assumiu esta rota</b></span>`}</div>
     <div class="mini"><div><span>Pontualidade</span><b>${r.pont == null ? "—" : r.pont + "%"}</b></div><div><span>Embarcaram</span><b>${r.emb}/${r.lista}</b></div><div><span>Ocupação</span><b>${r.ocup == null ? "—" : r.ocup + "%"}</b></div><div><span>Fora da lista</span><b>${r.nf}</b></div></div>
     <div class="tw" style="margin-top:12px"><table><thead><tr><th>#</th><th>Ponto</th><th class="num">Previsto</th><th class="num">1º check</th><th>Situação</th><th>Passageiros</th></tr></thead><tbody>
     ${r.stops.map((s, i) => `<tr><td><b>${i + 1}</b></td><td style="min-width:170px"><b>${esc(s.p)}</b><div style="font-size:13px;color:var(--muted)">${esc(s.b)}</div></td><td class="num"><span class="hora">${esc(s.t)}</span></td><td class="num"><span class="hora">${hm(s.real)}</span></td>

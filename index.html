@@ -342,6 +342,7 @@ function prepararRotas(rotas) {
   });
   return rotas;
 }
+let tentarDeNovo = null;
 async function atualizar(manual) {
   if (EMBED || DATA.carregando) return;
   DATA.carregando = true; if (manual) render();
@@ -366,6 +367,7 @@ async function atualizar(manual) {
   } catch (e) {
     DATA.carregando = false; DATA.erro = e.message;
     if (manual) toast("Não foi possível atualizar: " + e.message);
+    if (!tentarDeNovo) tentarDeNovo = setTimeout(() => { tentarDeNovo = null; atualizar(false) }, 2 * 60000);   // falhou: tenta de novo em 2 min
   }
   render();
 }
@@ -423,6 +425,7 @@ function iniciarDados() {
     if (!c || Date.now() - (c.em || 0) > CFG.ATUALIZAR_MIN * 60000) atualizar(false);
     enviar();
   });
+  window.addEventListener("online", () => atualizar(false));   // voltou o sinal: atualiza na hora
 }
 const editando = () => !!document.querySelector(".addform input:focus, #q:focus, #nomeMot:focus");
 
@@ -567,11 +570,10 @@ function card(r) {
 }
 function avisoDados() {
   if (!DATA.rotas.length) return DATA.carregando ? `<div class="banner"><div><b>Baixando os roteiros…</b> Na primeira vez é preciso estar com internet.</div></div>`
-    : `<div class="banner warn"><div><b>Não foi possível baixar os roteiros.</b> Conecte à internet e tente de novo.${DATA.erro ? " (" + esc(DATA.erro) + ")" : ""}</div><button class="btn sm" id="bretry">${icon.refresh}Tentar de novo</button></div>`;
+    : `<div class="banner warn"><div><b>Não foi possível baixar os roteiros.</b> Conecte à internet. O app tenta de novo sozinho em instantes.</div></div>`;
   if (DATA.fonte === "vivo" || DATA.carregando) return "";
-  if (DATA.fonte === "copia") return `<div class="banner warn"><div><b>Sem conexão com a planilha.</b> Os pontos e horários são de ${esc(DATA.quando)} e os nomes dos passageiros não aparecem.${DATA.erro ? " (" + esc(DATA.erro) + ")" : ""}</div><button class="btn sm" id="bretry">${icon.refresh}Tentar de novo</button></div>`;
-  if (DATA.erro) return `<div class="banner"><div><b>Mostrando a última atualização salva.</b> Não foi possível ler a planilha agora (${esc(DATA.erro)}).</div><button class="btn sm" id="bretry">${icon.refresh}Tentar de novo</button></div>`;
-  return "";
+  if (DATA.fonte === "copia") return `<div class="banner warn"><div><b>Sem conexão com a planilha.</b> Os pontos e horários são de ${esc(DATA.quando)} e os nomes dos passageiros não aparecem. O app tenta de novo sozinho.</div></div>`;
+  return "";   // com roteiro salvo, uma falha passageira não mostra aviso: o app tenta de novo sozinho
 }
 function renderHome() {
   const term = norm(state.q);
@@ -581,8 +583,7 @@ function renderHome() {
   const fv = favs(); const pinned = DATA.rotas.filter(r => fv.includes(r.id));
   $("#app").innerHTML = `
   <header class="top">
-    <div class="brand"><div class="brandrow"><img class="logo" alt="Consórcio UniLitoral" src="${LOGO}"><span class="sep"></span><div><h1>Roteiros <i>BYD</i></h1><small>${statusDados()}</small></div></div>
-      <button class="iconbtn" id="brefresh" aria-label="Atualizar os roteiros agora" ${DATA.carregando ? "disabled" : ""}>${icon.refresh}</button></div>
+    <div class="brand"><div class="brandrow"><img class="logo" alt="Consórcio UniLitoral" src="${LOGO}"><span class="sep"></span><div><h1>Roteiros <i>BYD</i></h1><small>${statusDados()}</small></div></div></div>
     <div class="seg" role="group" aria-label="Turno">
       <button id="t1" aria-pressed="${state.turno === "Turno 1"}">Turno 1</button>
       <button id="tadm" aria-pressed="${state.turno === "ADM"}">ADM</button>
@@ -597,8 +598,6 @@ function renderHome() {
 `;
   $("#t1").onclick = () => { state.turno = "Turno 1"; store.set("turno", state.turno); renderHome() };
   $("#tadm").onclick = () => { state.turno = "ADM"; store.set("turno", state.turno); renderHome() };
-  $("#brefresh").onclick = () => atualizar(true);
-  const br = $("#bretry"); if (br) br.onclick = () => atualizar(true);
   const bi = $("#binst"); if (bi) bi.onclick = async () => { const p = pedidoInstalar; pedidoInstalar = null; try { await p.prompt(); await p.userChoice } catch (e) { } renderHome() };
   const bn = $("#binstnao"); if (bn) bn.onclick = () => { store.set("semInstalar", true); renderHome() };
   const inp = $("#q");

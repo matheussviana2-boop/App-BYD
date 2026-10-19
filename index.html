@@ -5,6 +5,13 @@
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name="theme-color" content="#12968d">
 <meta name="robots" content="noindex,nofollow">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="Roteiros BYD">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icon-192.png">
+<link rel="apple-touch-icon" href="icon-192.png">
 <title>Roteiros BYD · UniLitoral</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600;700&family=Barlow+Condensed:wght@600;700;800&family=Exo+2:ital,wght@1,600;1,700;1,800&display=swap">
@@ -210,6 +217,10 @@ button:focus-visible,a:focus-visible,input:focus-visible{outline:3px solid var(-
 .mbox p{margin:0;color:var(--muted);font-size:14px}
 .dest .sbody{background:var(--navy);color:#fff}
 
+.banner.alt{background:#fff4dc;border:1px solid #f0c46a}
+.banner.alt ul{margin:6px 0 0;padding-left:18px;display:flex;flex-direction:column;gap:2px}
+.rcard.alt{border-color:#e7b24a}
+
 </style>
 </head>
 <body>
@@ -226,6 +237,7 @@ window.__SNAPSHOT__ = {"versao":"16/10/2026","rotas":[{"id":"T1 001","turno":"Tu
 "use strict";
 const CFG = {
   API: "https://script.google.com/macros/s/AKfycbw5J5Qco1221P5S7j8oIP52UWWNe1OIhoiC6mdgXQPxdvnpMGAgGT_uTT7yX8FPRMrZ0w/exec",
+  CHAVE: "YGmqNauujipdlrOI",  // a mesma do Code.gs
   ATUALIZAR_MIN: 30,        // relê a planilha a cada 30 min
   ENVIO_SEG: 60,            // tenta enviar embarques pendentes a cada 1 min
   LOTE: 8                   // embarques por envio
@@ -311,15 +323,60 @@ async function atualizar(manual) {
     const rotas = montarRotas(d.linhas);
     if (rotas.length < 20) throw new Error("leitura incompleta da planilha");
     const quando = new Date().toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" });
+    const antes = store.get("vivo2", null);
+    const nAlt = registrarAlteracoes(antes ? antes.rotas : null, rotas, d.alteradas || {});
     store.set("vivo2", { rotas, quando, em: Date.now() });
     DATA = { rotas: prepararRotas(rotas), fonte: "vivo", quando, carregando: false, erro: "" };
-    if (manual) toast("Roteiros atualizados");
+    if (nAlt) toast(nAlt === 1 ? "1 rota foi alterada na planilha" : nAlt + " rotas foram alteradas na planilha");
+    else if (manual) toast("Roteiros atualizados");
   } catch (e) {
     DATA.carregando = false; DATA.erro = e.message;
     if (manual) toast("Não foi possível atualizar: " + e.message);
   }
   render();
 }
+/* ---------- aviso de roteiro alterado ----------
+   O script informa quando cada rota mudou na planilha (alteradas: {rota: data/hora}).
+   Se o aparelho tem a leitura anterior, o app também descreve o que mudou. O aviso vale por 24 h. */
+const ALT_HORAS = 24;
+function resumoMudancas(a, b) {
+  const itens = [], mapa = r => new Map(r.stops.map(s => [norm(s.p), s]));
+  const A = mapa(a), B = mapa(b);
+  B.forEach((s, k) => {
+    const o = A.get(k);
+    if (!o) itens.push("Novo ponto: " + s.p + " (" + s.t + ")");
+    else if (o.t !== s.t) itens.push("Horário mudou em " + s.p + ": " + o.t + " → " + s.t);
+  });
+  A.forEach((s, k) => { if (!B.has(k)) itens.push("Ponto retirado: " + s.p) });
+  const pa = new Set(a.stops.flatMap(s => s.pax.map(p => p[1] || p[0]))), pb = new Set(b.stops.flatMap(s => s.pax.map(p => p[1] || p[0])));
+  const ent = [...pb].filter(x => !pa.has(x)).length, sai = [...pa].filter(x => !pb.has(x)).length;
+  if (ent) itens.push(ent === 1 ? "1 passageiro incluído" : ent + " passageiros incluídos");
+  if (sai) itens.push(sai === 1 ? "1 passageiro retirado" : sai + " passageiros retirados");
+  const va = a.sol || a.prog, vb = b.sol || b.prog;
+  if (va !== vb && vb) itens.push("Veículo: " + (va || "—") + " → " + vb);
+  return itens;
+}
+function registrarAlteracoes(velhas, novas, alteradas) {
+  const alt = store.get("alt", {}), agora = Date.now(), porId = new Map((velhas || []).map(r => [r.id, r]));
+  let n = 0;
+  novas.forEach(r => {
+    const antes = porId.get(r.id);
+    const itens = !velhas ? [] : antes ? resumoMudancas(antes, r) : ["Rota nova"];
+    const srv = alteradas[r.id] ? new Date(alteradas[r.id]).getTime() || 0 : 0;
+    if (itens.length) {                                   // este aparelho viu a mudança
+      alt[r.id] = { em: srv && agora - srv < 30 * 60000 ? srv : agora, itens }; n++;
+    } else if (srv && (!alt[r.id] || alt[r.id].em < srv - 60000)) {   // o script avisou de uma mudança que o aparelho não tinha visto
+      alt[r.id] = { em: srv, itens: [] };
+      if (velhas && agora - srv < ALT_HORAS * 3600e3) n++;
+    }
+  });
+  Object.keys(alt).forEach(k => { if (agora - alt[k].em > ALT_HORAS * 3600e3) delete alt[k] });
+  store.set("alt", alt);
+  return n;
+}
+function alteracao(r) { const a = store.get("alt", {})[r.id]; return a && Date.now() - a.em < ALT_HORAS * 3600e3 ? a : null }
+const quandoTxt = t => { const d = new Date(t); return (hoje(d) === hoje() ? "hoje" : pad(d.getDate()) + "/" + pad(d.getMonth() + 1)) + " às " + hhmm(d) };
+
 function iniciarDados() {
   const cache = store.get("vivo2", null);
   if (cache) DATA = { rotas: prepararRotas(cache.rotas), fonte: "cache", quando: cache.quando, carregando: false, erro: "" };
@@ -350,7 +407,7 @@ async function enviar() {
   try {
     while (f.length) {
       const lote = f.slice(0, CFG.LOTE);
-      const r = await jsonp(CFG.API + "?acao=registrar&ev=" + encodeURIComponent(JSON.stringify(lote)), 45000);
+      const r = await jsonp(CFG.API + "?acao=registrar&k=" + CFG.CHAVE + "&ev=" + encodeURIComponent(JSON.stringify(lote)), 45000);
       const ok = new Set(r.ids || lote.map(e => e.id));
       f = fila().filter(e => !ok.has(e.id)); store.set("fila", f);
     }
@@ -413,10 +470,11 @@ function statusDados() { return DATA.carregando ? "Atualizando os roteiros…" :
 function card(r) {
   const fav = favs().includes(r.id);
   const emb = Object.keys(store.get(chEmb(r), {})).length + store.get(chExt(r), []).length;
-  return `<button class="rcard" data-r="${esc(r.id)}">${plate(r)}
+  const alt = alteracao(r);
+  return `<button class="rcard${alt ? " alt" : ""}" data-r="${esc(r.id)}">${plate(r)}
     <div class="rmeta"><div class="l1">${esc(r.ini)} → ${esc(r.fim)} · ${r.stops.length} paradas</div>
     <div class="l2">${esc(r.veic)} · ${r.pax} passageiros${r.emp ? " · " + esc(r.emp) : ""}</div>
-    ${emb ? `<div class="chips"><span class="chip ok">${emb} embarque${emb > 1 ? "s" : ""} hoje</span></div>` : ""}</div>
+    ${emb || alt ? `<div class="chips">${alt ? `<span class="chip warn">Alterada ${esc(quandoTxt(alt.em))}</span>` : ""}${emb ? `<span class="chip ok">${emb} embarque${emb > 1 ? "s" : ""} hoje</span>` : ""}</div>` : ""}</div>
     <span class="${fav ? "pin" : "chev"}">${fav ? icon.star(true) : icon.chev}</span></button>`;
 }
 function avisoDados() {
@@ -477,6 +535,7 @@ function renderRoute() {
     <div><b>${embLista}<small>/${r.pax}</small></b><span>Embarcaram</span></div>
   </div>
   <div class="status"><span id="syncp">${syncTxt()}</span>${ex.length ? `<span class="pill">${ex.length} fora da lista</span>` : ""}</div>
+  ${(a => a ? `<div class="banner alt"><div><b>Roteiro alterado ${esc(quandoTxt(a.em))}.</b>${a.itens && a.itens.length ? `<ul>${a.itens.slice(0, 6).map(x => `<li>${esc(x)}</li>`).join("")}${a.itens.length > 6 ? `<li>e mais ${a.itens.length - 6} mudança(s)</li>` : ""}</ul>` : " Confira os pontos e horários abaixo."}</div></div>` : "")(alteracao(r))}
   ${semNomes ? `<div class="banner warn"><div><b>Nomes indisponíveis.</b> O app não conseguiu ler a planilha. Conecte à internet e toque em atualizar na tela inicial.</div></div>` : ""}
   <ol class="tl">
     ${r.stops.map((s, i) => {
@@ -529,8 +588,24 @@ function renderRoute() {
   };
 }
 
+/* ---------- limpeza: apaga do aparelho as marcações com mais de 7 dias (já estão na planilha de registros) ---------- */
+function limparAntigos() {
+  try {
+    const lim = hoje(new Date(Date.now() - 7 * 864e5));
+    for (let i = localStorage.length - 1; i >= 0; i--) {
+      const k = localStorage.key(i), m = k && k.match(/^rbyd:(emb|ext):(\d{4}-\d{2}-\d{2}):/);
+      if (m && m[2] < lim) localStorage.removeItem(k);
+      if (k === "rbyd:vivo") localStorage.removeItem(k);   // cópia da versão anterior
+    }
+  } catch (e) { }
+}
+
+/* ---------- app instalado (PWA) ---------- */
+if (!EMBED && "serviceWorker" in navigator && location.protocol === "https:") navigator.serviceWorker.register("sw.js").catch(() => { });
+
 /* ---------- roteador ---------- */
 function render() { if (editando()) return; if (!state.rota) return renderHome(); return renderRoute() }
+limparAntigos();
 iniciarDados();
 
 </script>

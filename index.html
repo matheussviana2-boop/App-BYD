@@ -642,8 +642,10 @@ function avisoInstalar() {
   if (EMBED || instalado() || store.get("semInstalar", false)) return "";
   const ios = /iphone|ipad|ipod/i.test(navigator.userAgent);
   if (pedidoInstalar) return `<div class="banner inst"><div><b>Instale o app no celular.</b> Ele fica com ícone na tela e abre mesmo sem sinal.</div><div class="ctrls"><button class="btn sm" id="binstnao">Agora não</button><button class="btn sm primary" id="binst">Instalar app</button></div></div>`;
-  if (ios) return `<div class="banner inst"><div><b>Instale o app:</b> toque em Compartilhar e depois em <b>Adicionar à Tela de Início</b>.</div><div class="ctrls"><button class="btn sm" id="binstnao">Ok</button></div></div>`;
-  return "";
+  if (ios) return `<div class="banner inst"><div><b>Instale o app:</b> no Safari, toque em Compartilhar e depois em <b>Adicionar à Tela de Início</b>.</div><div class="ctrls"><button class="btn sm" id="binstnao">Ok</button></div></div>`;
+  // Chrome só oferece o botão automático depois de algum uso da página; até lá, mostra o caminho pelo menu
+  const android = /android/i.test(navigator.userAgent);
+  return `<div class="banner inst"><div><b>Instale o app:</b> no Chrome, toque no menu <b>⋮</b> e escolha <b>${android ? "Adicionar à tela inicial → Instalar" : "Transmitir, salvar e compartilhar → Instalar página como app"}</b>.</div><div class="ctrls"><button class="btn sm" id="binstnao">Ok</button></div></div>`;
 }
 if (!EMBED && "serviceWorker" in navigator && location.protocol === "https:") navigator.serviceWorker.register("sw.js").catch(() => { });
 

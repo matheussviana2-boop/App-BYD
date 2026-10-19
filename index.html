@@ -502,7 +502,7 @@ function card(r) {
   return `<button class="rcard${alt ? " alt" : ""}" data-r="${esc(r.id)}">${plate(r)}
     <div class="rmeta"><div class="l1">${esc(r.ini)} → ${esc(r.fim)} · ${r.stops.length} paradas</div>
     <div class="l2">${esc(r.veic)} · ${r.pax} passageiros${r.emp ? " · " + esc(r.emp) : ""}</div>
-    ${emb || alt ? `<div class="chips">${alt ? `<span class="chip warn">Alterada ${esc(quandoTxt(alt.em))}</span>` : ""}${emb ? `<span class="chip ok">${emb} embarque${emb > 1 ? "s" : ""} hoje</span>` : ""}</div>` : ""}</div>
+    ${emb || alt ? `<div class="chips">${alt ? `<span class="chip warn">Rota alterada recentemente · confira</span>` : ""}${emb ? `<span class="chip ok">${emb} embarque${emb > 1 ? "s" : ""} hoje</span>` : ""}</div>` : ""}</div>
     <span class="${fav ? "pin" : "chev"}">${fav ? icon.star(true) : icon.chev}</span></button>`;
 }
 function avisoDados() {
@@ -568,7 +568,7 @@ function renderRoute() {
     <div><b>${embLista}<small>/${r.pax}</small></b><span>Embarcaram</span></div>
   </div>
   <div class="status"><span id="syncp">${syncTxt()}</span>${ex.length ? `<span class="pill">${ex.length} fora da lista</span>` : ""}</div>
-  ${(a => a ? `<div class="banner alt"><div><b>Roteiro alterado ${esc(quandoTxt(a.em))}.</b>${a.itens && a.itens.length ? `<ul>${a.itens.slice(0, 6).map(x => `<li>${esc(x)}</li>`).join("")}${a.itens.length > 6 ? `<li>e mais ${a.itens.length - 6} mudança(s)</li>` : ""}</ul>` : " Confira os pontos e horários abaixo."}</div></div>` : "")(alteracao(r))}
+  ${(a => a ? `<div class="banner alt"><div><b>Esta rota mudou recentemente. Confira os pontos e horários.</b>${a.itens && a.itens.length ? `<ul>${a.itens.slice(0, 6).map(x => `<li>${esc(x)}</li>`).join("")}${a.itens.length > 6 ? `<li>e mais ${a.itens.length - 6} mudança(s)</li>` : ""}</ul>` : ""}</div></div>` : "")(alteracao(r))}
   ${semNomes ? `<div class="banner warn"><div><b>Nomes indisponíveis.</b> O app não conseguiu ler a planilha. Conecte à internet e toque em atualizar na tela inicial.</div></div>` : ""}
   <ol class="tl">
     ${r.stops.map((s, i) => {

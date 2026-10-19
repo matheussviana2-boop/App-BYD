@@ -17,7 +17,7 @@ html,body{margin:0;min-height:100%}
 :root{
   --bg:#f3f6f7; --surface:#ffffff; --surface-2:#e6eef0; --fg:#1f2343; --muted:#5b6478; --line:#d3dde2;
   --brand:#12968d; --brand-2:#1fb5a8; --navy:#23234a; --brand-red:#23234a;
-  --accent:#12968d; --accent-ink:#ffffff; --plate:#23234a; --plate-ink:#ffffff;
+  --accent:#12968d; --accent-ink:#ffffff; --plate:#0e7f78; --plate-ink:#ffffff;
   --ok:#0f8a5f; --ok-bg:#dcf3ea; --warn:#9a5a00; --warn-bg:#fdecd2; --bad:#b3261e; --bad-bg:#fbe0dd; --info:#0f7a73; --info-bg:#d9f1ef;
   --f-brand:"Exo 2","Segoe UI",system-ui,sans-serif;
   --f-display:"Barlow Condensed","Arial Narrow",system-ui,sans-serif;
@@ -174,7 +174,7 @@ button:focus-visible,a:focus-visible,input:focus-visible{outline:3px solid var(-
 .leaflet-tooltip.lbl::before{display:none}
 
 /* ---- embarques ---- */
-.plate .k{color:var(--brand-2)}
+.plate .k{color:#ffffff;opacity:.9}
 .brand h1 i{color:var(--brand)}
 .banner{margin-top:12px;border-radius:12px;padding:10px 12px;background:var(--info-bg);color:var(--fg);font-size:14px;display:flex;flex-direction:column;gap:8px;align-items:flex-start}
 .banner.warn{background:var(--warn-bg)}
@@ -311,7 +311,7 @@ async function atualizar(manual) {
     const rotas = montarRotas(d.linhas);
     if (rotas.length < 20) throw new Error("leitura incompleta da planilha");
     const quando = new Date().toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" });
-    store.set("vivo", { rotas, quando, em: Date.now() });
+    store.set("vivo2", { rotas, quando, em: Date.now() });
     DATA = { rotas: prepararRotas(rotas), fonte: "vivo", quando, carregando: false, erro: "" };
     if (manual) toast("Roteiros atualizados");
   } catch (e) {
@@ -321,7 +321,7 @@ async function atualizar(manual) {
   render();
 }
 function iniciarDados() {
-  const cache = store.get("vivo", null);
+  const cache = store.get("vivo2", null);
   if (cache) DATA = { rotas: prepararRotas(cache.rotas), fonte: "cache", quando: cache.quando, carregando: false, erro: "" };
   else if (window.__SNAPSHOT__) DATA = { rotas: prepararRotas(window.__SNAPSHOT__.rotas), fonte: "copia", quando: window.__SNAPSHOT__.versao || "", carregando: false, erro: "" };
   render();
@@ -329,7 +329,7 @@ function iniciarDados() {
   setInterval(() => atualizar(false), CFG.ATUALIZAR_MIN * 60000);
   document.addEventListener("visibilitychange", () => {
     if (document.visibilityState !== "visible") return;
-    const c = store.get("vivo", null);
+    const c = store.get("vivo2", null);
     if (!c || Date.now() - (c.em || 0) > CFG.ATUALIZAR_MIN * 60000) atualizar(false);
     enviar();
   });

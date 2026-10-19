@@ -292,6 +292,23 @@ function montarRotas(linhas) {
     return { id: R.id, turno: R.turno, emp: R.emp, prog: R.prog, sol: R.sol, stops: [...st.values()] };
   });
 }
+// chamada ao Apps Script: primeiro por fetch SEM cookies (evita o erro do Google quando o celular
+// tem mais de uma conta Google logada); se não der, tenta pelo método antigo (JSONP)
+async function chamar(url, ms) {
+  ms = ms || 60000;
+  try {
+    const ctrl = new AbortController(), t = setTimeout(() => ctrl.abort(), ms);
+    const r = await fetch(url, { credentials: "omit", redirect: "follow", cache: "no-store", signal: ctrl.signal });
+    clearTimeout(t);
+    if (!r.ok) throw new Error("HTTP " + r.status);
+    const d = await r.json();
+    if (!d || d.status !== "ok") throw Object.assign(new Error((d && d.mensagem) || "o script respondeu com erro"), { doScript: true });
+    return d;
+  } catch (e) {
+    if (e.doScript) throw e;                    // o script respondeu: não adianta tentar de novo
+    try { return await jsonp(url, ms) } catch (e2) { throw new Error(e2.message + " / " + (e.name === "AbortError" ? "tempo esgotado" : e.message)) }
+  }
+}
 function jsonp(url, ms) {
   return new Promise((res, rej) => {
     const cb = "__a" + Math.random().toString(36).slice(2), s = document.createElement("script");
@@ -319,7 +336,7 @@ async function atualizar(manual) {
   DATA.carregando = true; if (manual) render();
   try {
     const antes = store.get("vivo2", null);
-    const d = await jsonp(CFG.API + (antes && antes.versao ? "?v=" + encodeURIComponent(antes.versao) : ""));
+    const d = await chamar(CFG.API + (antes && antes.versao ? "?v=" + encodeURIComponent(antes.versao) : ""));
     const quandoJa = new Date().toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" });
     if (d.igual && antes) {                  // planilha não mudou: nada para baixar
       antes.quando = quandoJa; antes.em = Date.now(); store.set("vivo2", antes);
@@ -414,7 +431,7 @@ async function enviar() {
   try {
     while (f.length) {
       const lote = f.slice(0, CFG.LOTE);
-      const r = await jsonp(CFG.API + "?acao=registrar&k=" + CFG.CHAVE + "&ev=" + encodeURIComponent(JSON.stringify(lote)), 45000);
+      const r = await chamar(CFG.API + "?acao=registrar&k=" + CFG.CHAVE + "&ev=" + encodeURIComponent(JSON.stringify(lote)), 45000);
       const ok = new Set(r.ids || lote.map(e => e.id));
       f = fila().filter(e => !ok.has(e.id)); store.set("fila", f);
     }

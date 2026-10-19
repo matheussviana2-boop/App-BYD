@@ -225,6 +225,13 @@ button:focus-visible,a:focus-visible,input:focus-visible{outline:3px solid var(-
 .banner .ctrls{display:flex;gap:8px;width:100%}
 .banner .ctrls .btn{flex:1}
 
+.banner.resp{background:var(--info-bg);gap:10px}
+.banner.resp input{height:48px;width:100%;border-radius:10px;border:1px solid var(--line);padding:0 12px;font:inherit;font-size:17px;background:var(--surface);color:var(--fg)}
+.banner.resp .ctrls{display:flex;width:100%}
+.banner.resp .ctrls .btn{flex:1;height:46px;font-size:16px}
+.banner.resp small{color:var(--muted);font-size:13px}
+.prow:disabled .box{border-color:var(--line)}
+
 </style>
 </head>
 <body>
@@ -408,7 +415,7 @@ function iniciarDados() {
   const cache = store.get("vivo2", null);
   if (cache) DATA = { rotas: prepararRotas(cache.rotas), fonte: "cache", quando: cache.quando, carregando: false, erro: "" };
   render();
-  atualizar(false);
+  atualizar(false); lerResp();
   setInterval(() => atualizar(false), CFG.ATUALIZAR_MIN * 60000);
   document.addEventListener("visibilitychange", () => {
     if (document.visibilityState !== "visible") return;
@@ -417,7 +424,7 @@ function iniciarDados() {
     enviar();
   });
 }
-const editando = () => !!document.querySelector(".addform input:focus, #q:focus");
+const editando = () => !!document.querySelector(".addform input:focus, #q:focus, #nomeMot:focus");
 
 /* ---------- embarques: guardados no aparelho e enviados para a planilha de registros ---------- */
 const chEmb = r => "emb:" + hoje() + ":" + r.id;      // { "s<i>:<ref|nome>": {h:"06:16", t:iso} }
@@ -428,8 +435,60 @@ function fila() { return store.get("fila", []) }
 let tEnvio = null;
 function enfileirar(ev) { const f = fila(); f.push(ev); store.set("fila", f); atualizarSync(); clearTimeout(tEnvio); tEnvio = setTimeout(enviar, 2000) }
 let enviando = false;
+/* ---------- responsável pela rota no dia ----------
+   O primeiro motorista que assume a rota no dia fica responsável; nos outros aparelhos a rota abre só para consulta. */
+const chMeu = r => "meu:" + hoje() + ":" + (r.id || r);       // { nome, em, pend, perdeu }
+let RESP = store.get("resp:" + hoje(), {});                      // { rota: [nome, aparelho, quando] } de hoje
+async function lerResp() {
+  if (EMBED) return;
+  try {
+    const d = await chamar(CFG.API + "?acao=responsaveis&data=" + hoje(), 20000);
+    RESP = d.mapa || {}; store.set("resp:" + hoje(), RESP);
+    if (!editando()) render();
+  } catch (e) { }
+}
+function modoRota(r) {
+  const meu = store.get(chMeu(r), null), dono = RESP[r.id];
+  if (meu && !meu.perdeu) {
+    if (dono && dono[1] !== aparelho && norm(dono[0]) !== norm(meu.nome)) return "bloq";
+    return "dono";
+  }
+  return dono ? "bloq" : "livre";
+}
+async function assumirRota(r, nome) {
+  store.set("nomeMotorista", nome);
+  const loc = { nome, em: isoLocal(), pend: true };
+  try {
+    const d = await chamar(CFG.API + "?acao=assumir&k=" + CFG.CHAVE + "&data=" + hoje() + "&rota=" + encodeURIComponent(r.id) + "&nome=" + encodeURIComponent(nome) + "&aparelho=" + aparelho, 20000);
+    RESP[r.id] = d.dono; store.set("resp:" + hoje(), RESP);
+    if (!d.meu) return "bloq";
+    loc.pend = false; store.set(chMeu(r), loc); return "ok";
+  } catch (e) {                                 // sem sinal: libera neste aparelho e confirma quando a internet voltar
+    store.set(chMeu(r), loc);
+    const pend = store.get("respPend", []); if (!pend.includes(r.id)) pend.push(r.id); store.set("respPend", pend);
+    return "offline";
+  }
+}
+async function confirmarPendentes() {
+  const pend = store.get("respPend", []); if (!pend.length) return;
+  const resta = [];
+  for (const id of pend) {
+    const meu = store.get(chMeu(id), null); if (!meu || !meu.pend) continue;
+    try {
+      const d = await chamar(CFG.API + "?acao=assumir&k=" + CFG.CHAVE + "&data=" + hoje() + "&rota=" + encodeURIComponent(id) + "&nome=" + encodeURIComponent(meu.nome) + "&aparelho=" + aparelho, 20000);
+      RESP[id] = d.dono; store.set("resp:" + hoje(), RESP);
+      if (d.meu) { meu.pend = false } else { meu.perdeu = true; toast("A rota " + id + " já estava com " + d.dono[0] + ". Ela ficou só para consulta.") }
+      store.set(chMeu(id), meu);
+    } catch (e) { resta.push(id) }
+  }
+  store.set("respPend", resta);
+  if (!editando()) render();
+}
+const desde = iso => { const d = new Date(iso); return isNaN(d) ? "" : " desde " + hhmm(d) };
+
 async function enviar() {
   if (EMBED || enviando) return;
+  await confirmarPendentes();
   let f = fila(); if (!f.length) return atualizarSync();
   enviando = true; atualizarSync();
   try {
@@ -455,7 +514,7 @@ function atualizarSync() { const el = $("#syncp"); if (el) el.innerHTML = syncTx
 
 function evento(r, i, s, nome, ref, tipo, acao, quando) {
   return { id: uid(), quando: quando || isoLocal(), data: hoje(), turno: r.turno, rota: r.id, parada: i + 1, ponto: s.p, horaPrev: s.t,
-    ref: ref || "", nome, tipo, acao, motorista: "", aparelho };
+    ref: ref || "", nome, tipo, acao, motorista: (store.get(chMeu(r), null) || {}).nome || "", aparelho };
 }
 function marcar(r, i, p) {
   const m = store.get(chEmb(r), {}), k = paxKey(i, p), s = r.stops[i];
@@ -498,11 +557,12 @@ function statusDados() { return DATA.carregando ? "Atualizando os roteiros…" :
 function card(r) {
   const fav = favs().includes(r.id);
   const emb = Object.keys(store.get(chEmb(r), {})).length + store.get(chExt(r), []).length;
-  const alt = alteracao(r);
+  const alt = alteracao(r), dono = RESP[r.id], mo = modoRota(r);
+  const chipDono = mo === "dono" ? `<span class="chip ok">Você está nesta rota</span>` : dono ? `<span class="chip">Em andamento · ${esc(dono[0])}</span>` : "";
   return `<button class="rcard${alt ? " alt" : ""}" data-r="${esc(r.id)}">${plate(r)}
     <div class="rmeta"><div class="l1">${esc(r.ini)} → ${esc(r.fim)} · ${r.stops.length} paradas</div>
     <div class="l2">${esc(r.veic)} · ${r.pax} passageiros${r.emp ? " · " + esc(r.emp) : ""}</div>
-    ${emb || alt ? `<div class="chips">${alt ? `<span class="chip warn">Rota alterada recentemente · confira</span>` : ""}${emb ? `<span class="chip ok">${emb} embarque${emb > 1 ? "s" : ""} hoje</span>` : ""}</div>` : ""}</div>
+    ${emb || alt || chipDono ? `<div class="chips">${chipDono}${alt ? `<span class="chip warn">Rota alterada recentemente · confira</span>` : ""}${emb ? `<span class="chip ok">${emb} embarque${emb > 1 ? "s" : ""} hoje</span>` : ""}</div>` : ""}</div>
     <span class="${fav ? "pin" : "chev"}">${fav ? icon.star(true) : icon.chev}</span></button>`;
 }
 function avisoDados() {
@@ -547,7 +607,7 @@ function renderHome() {
 }
 
 /* ---------- tela da rota: pontos, passageiros e embarques ---------- */
-function abrirRota(id) { state.rota = id; state.confirmar = null; state.add = null; render(); window.scrollTo(0, 0) }
+function abrirRota(id) { state.rota = id; state.confirmar = null; state.add = null; render(); window.scrollTo(0, 0); lerResp() }
 const rotaAtual = () => DATA.rotas.find(x => x.id === state.rota);
 function renderRoute() {
   const r = rotaAtual(); if (!r) { state.rota = null; return renderHome() }
@@ -555,7 +615,15 @@ function renderRoute() {
   const m = store.get(chEmb(r), {}), ex = store.get(chExt(r), []);
   const semNomes = r.stops.every(s => s.pax.every(p => !p[0]));
   const embLista = r.stops.reduce((a, s, i) => a + s.pax.filter(p => m[paxKey(i, p)]).length, 0);
-  const y = window.scrollY;
+  const y = window.scrollY, mo = modoRota(r), pode = mo === "dono" || EMBED, meu = store.get(chMeu(r), null), dono = RESP[r.id];
+  const cartao = EMBED ? "" : mo === "livre"
+    ? `<form class="banner resp" id="fresp"><div><b>Você é o motorista responsável por esta rota hoje?</b> Informe seu nome para liberar as marcações de embarque.</div>
+        <input id="nomeMot" maxlength="60" placeholder="Seu nome" autocomplete="name" aria-label="Seu nome" value="${esc(store.get("nomeMotorista", ""))}">
+        <div class="ctrls"><button class="btn sm primary" id="bassumir">Sim, sou o responsável</button></div>
+        <small>Só quer consultar? Pode ver a rota abaixo sem informar o nome.</small></form>`
+    : mo === "bloq"
+    ? `<div class="banner warn"><div><b>Esta rota já está sendo realizada por ${esc(dono ? dono[0] : "outro motorista")}${dono ? desde(dono[2]) : ""}.</b> Você pode ver a rota, mas não pode marcar embarques.</div></div>`
+    : `<div class="status"><span class="pill ok">Responsável hoje: ${esc(meu.nome)}</span>${meu.pend ? `<span class="pill warn">Aguardando sinal para confirmar</span>` : ""}</div>`;
   $("#app").innerHTML = `
   <header class="top"><div class="brand">
     <button class="iconbtn" id="back" aria-label="Voltar para a lista de rotas">${icon.back}Rotas</button>
@@ -567,7 +635,8 @@ function renderRoute() {
     <div><b>${r.stops.length}</b><span>Paradas</span></div>
     <div><b>${embLista}<small>/${r.pax}</small></b><span>Embarcaram</span></div>
   </div>
-  <div class="status"><span id="syncp">${syncTxt()}</span>${ex.length ? `<span class="pill">${ex.length} fora da lista</span>` : ""}</div>
+  ${cartao}
+  ${pode ? `<div class="status"><span id="syncp">${syncTxt()}</span>${ex.length ? `<span class="pill">${ex.length} fora da lista</span>` : ""}</div>` : ""}
   ${(a => a ? `<div class="banner alt"><div><b>Esta rota mudou recentemente. Confira os pontos e horários.</b>${a.itens && a.itens.length ? `<ul>${a.itens.slice(0, 6).map(x => `<li>${esc(x)}</li>`).join("")}${a.itens.length > 6 ? `<li>e mais ${a.itens.length - 6} mudança(s)</li>` : ""}</ul>` : ""}</div></div>` : "")(alteracao(r))}
   ${semNomes ? `<div class="banner warn"><div><b>Nomes indisponíveis.</b> O app não conseguiu ler a planilha. Conecte à internet e toque em atualizar na tela inicial.</div></div>` : ""}
   <ol class="tl">
@@ -584,13 +653,13 @@ function renderRoute() {
             ${s.pax.map((p, j) => {
               const k = paxKey(i, p), e = m[k];
               if (state.confirmar === k) return `<li class="prow conf"><span>Desfazer o embarque de <b>${esc(p[0] || "passageiro")}</b>?</span><span class="cbtns"><button class="btn sm" data-no="1">Não</button><button class="btn sm danger" data-undo="${i}:${j}">Desfazer</button></span></li>`;
-              return `<li><button class="prow${e ? " on" : ""}" data-p="${i}:${j}" aria-pressed="${!!e}" ${!p[0] ? "disabled" : ""}><span class="box">${e ? icon.check : ""}</span><span class="nm">${esc(p[0] || "Passageiro " + (j + 1))}</span>${e ? `<span class="hr">${esc(e.h)}</span>` : ""}</button></li>`;
+              return `<li><button class="prow${e ? " on" : ""}" data-p="${i}:${j}" aria-pressed="${!!e}" ${!p[0] || !pode ? "disabled" : ""}><span class="box">${e ? icon.check : ""}</span><span class="nm">${esc(p[0] || "Passageiro " + (j + 1))}</span>${e ? `<span class="hr">${esc(e.h)}</span>` : ""}</button></li>`;
             }).join("")}
             ${extras.map(x => state.confirmar === "x:" + x.id
               ? `<li class="prow conf"><span>Remover <b>${esc(x.nome)}</b>?</span><span class="cbtns"><button class="btn sm" data-no="1">Não</button><button class="btn sm danger" data-rmx="${esc(x.id)}">Remover</button></span></li>`
-              : `<li><button class="prow on extra" data-x="${esc(x.id)}"><span class="box">${icon.check}</span><span class="nm">${esc(x.nome)}<em>Fora da lista</em></span><span class="hr">${esc(x.h)}</span></button></li>`).join("")}
+              : `<li><button class="prow on extra" data-x="${esc(x.id)}" ${pode ? "" : "disabled"}><span class="box">${icon.check}</span><span class="nm">${esc(x.nome)}<em>Fora da lista</em></span><span class="hr">${esc(x.h)}</span></button></li>`).join("")}
           </ul>
-          ${state.add === i
+          ${!pode ? "" : state.add === i
             ? `<form class="addform" data-add="${i}"><input id="addnome" maxlength="60" placeholder="Nome do passageiro" autocomplete="off" aria-label="Nome do passageiro que embarcou"><div class="ctrls"><button type="button" class="btn sm" data-cancel="1">Cancelar</button><button class="btn sm primary">Embarcou</button></div></form>`
             : `<button class="addbtn" data-addbtn="${i}">${icon.plus}Passageiro fora da lista</button>`}
         </div></li>`;
@@ -602,6 +671,15 @@ function renderRoute() {
   $("#back").onclick = () => { state.rota = null; renderHome(); window.scrollTo(0, 0) };
   $("#fav").onclick = () => { let f = favs(); f = f.includes(r.id) ? f.filter(x => x !== r.id) : [...f, r.id]; store.set("fav", f); renderRoute(); toast(f.includes(r.id) ? "Rota fixada no início" : "Rota removida de Minhas rotas") };
   const comNome = fn => fn;
+  const fr = $("#fresp");
+  if (fr) fr.onsubmit = async e => {
+    e.preventDefault(); const nome = $("#nomeMot").value.trim().replace(/\s+/g, " ");
+    if (nome.length < 3) { toast("Digite seu nome"); return }
+    $("#nomeMot").blur(); const b = $("#bassumir"); b.disabled = true; b.textContent = "Confirmando…";
+    const res = await assumirRota(r, nome);
+    toast(res === "ok" ? "Rota liberada para " + nome : res === "offline" ? "Sem sinal: rota liberada neste aparelho. Confirmamos quando a internet voltar." : "Esta rota já está com outro motorista.");
+    renderRoute();
+  };
   document.querySelectorAll("[data-p]").forEach(b => b.onclick = comNome(() => {
     const [i, j] = b.dataset.p.split(":").map(Number), p = r.stops[i].pax[j], k = paxKey(i, p);
     if (store.get(chEmb(r), {})[k]) state.confirmar = k; else { marcar(r, i, p); state.confirmar = null }

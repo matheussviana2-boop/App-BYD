@@ -60,6 +60,22 @@ button:focus-visible,input:focus-visible,select:focus-visible{outline:3px solid 
 .selt{display:flex;align-items:center;gap:8px;height:42px;padding:0 6px 0 12px;border:1px solid var(--line);border-radius:12px;background:var(--surface)}
 .selt span{font-size:13px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;color:var(--muted)}
 .selt select{height:36px;border:0;background:transparent;font-weight:700;font-size:16px;padding:0 6px;cursor:pointer}
+.det{text-align:center}
+.det .dh{display:flex;gap:12px;align-items:center;justify-content:center;flex-wrap:wrap}
+.det .motr{justify-content:center;flex-wrap:wrap}
+.det .motr .em::before{content:"· "}
+.det th,.det td{text-align:center;vertical-align:middle}
+.det .chips{justify-content:center}
+.det td:last-child{width:50%}
+.det .key{justify-content:center}
+.exp{position:relative}
+.btn.xl{background:#0e7f78;border-color:#0e7f78;color:#fff}
+.expm{position:absolute;z-index:20;top:48px;left:0;min-width:280px;background:var(--surface);border:1px solid var(--line);border-radius:12px;box-shadow:0 10px 30px rgba(20,30,50,.16);padding:6px;display:grid;gap:4px}
+.expm[hidden]{display:none}
+.expm button{text-align:left;border:0;background:transparent;border-radius:9px;padding:10px 12px;cursor:pointer}
+.expm button:hover{background:var(--bg)}
+.expm b{display:block;font-size:15px}
+.expm small{display:block;color:var(--muted);font-size:13px;margin-top:2px}
 .kpi{background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:14px 16px}
 .kpi span{display:block;font-size:13px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;color:var(--muted)}
 .kpi b{display:block;font-family:var(--f-num);font-weight:700;font-size:42px;line-height:1.05;font-variant-numeric:tabular-nums;margin-top:4px}
@@ -109,7 +125,7 @@ tr.click{cursor:pointer} tr.click:hover td{background:#f4f9f9}
 .motr small{display:block;font-size:12px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;color:var(--muted)}
 .motr b{font-size:19px;color:#0e5f5a}
 .motr b.nd{font-size:16px;color:var(--muted);font-weight:600}
-.motr .em{margin-left:auto;white-space:nowrap;font-size:14px;color:var(--muted);font-variant-numeric:tabular-nums}
+.motr .em{white-space:nowrap;font-size:14px;color:var(--muted);font-variant-numeric:tabular-nums}
 .rl small.mot{color:#0e5f5a;font-weight:600}
 .mini{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px;margin-top:12px}
 @media (max-width:600px){.mini{grid-template-columns:repeat(2,minmax(0,1fr))}}
@@ -350,6 +366,11 @@ function renderRotas() {
     <input type="date" id="fdata" value="${R.data}" max="${hojeISO()}" aria-label="Data">
     <div class="seg" role="group" aria-label="Turno">${[["", "Todos"], ["Turno 1", "Turno 1"], ["ADM", "ADM"]].map(([t, l]) => `<button data-t="${t}" aria-pressed="${R.turno === t}">${l}</button>`).join("")}</div>
     <button class="btn" id="bref" ${R.carregando ? "disabled" : ""}>↻ Atualizar</button>
+    ${R.res ? `<div class="exp"><button class="btn xl" id="bexp" aria-expanded="false" ${R.exportando ? "disabled" : ""}>${R.exportando ? "Gerando Excel…" : "⬇ Exportar Excel"}</button>
+      <div class="expm" id="expm" hidden>
+        ${r ? `<button data-exp="uma"><b>Só a rota ${esc(r.id)}</b><small>A rota aberta na tela</small></button>` : ""}
+        <button data-exp="lista"><b>${R.turno ? "Todas as rotas " + (R.turno === "ADM" ? "do ADM" : "do " + R.turno) : "Todas as rotas"}${R.q ? " da busca" : ""}</b><small>${lista.length} rota${lista.length === 1 ? "" : "s"} · ${R.turno ? "1 aba (" + R.turno + ")" : "abas Turno 1 e ADM"}</small></button>
+      </div></div>` : ""}
   </div>
   ${R.erro ? `<div class="banner"><b>Não foi possível atualizar:</b> ${esc(R.erro)}</div>` : ""}
   ${!R.res ? `<div class="panel empty">${R.carregando ? "Carregando os dados do dia…" : "Sem dados."}</div>` : `
@@ -374,14 +395,73 @@ function renderRotas() {
   on("#fdata", "onchange", e => { R.data = e.target.value || hojeISO(); R.res = null; carregarRotas(true) });
   document.querySelectorAll("[data-t]").forEach(b => b.onclick = () => { R.turno = b.dataset.t; render() });
   on("#bref", "onclick", () => carregarRotas(true));
+  on("#bexp", "onclick", e => { e.stopPropagation(); const m = $("#expm"); m.hidden = !m.hidden; e.currentTarget.setAttribute("aria-expanded", String(!m.hidden)) });
+  document.querySelectorAll("[data-exp]").forEach(b => b.onclick = async () => {
+    const uma = b.dataset.exp === "uma", sel = uma ? [r] : lista, suf = uma ? r.id.replace(/\s+/g, "-") : R.turno ? R.turno.replace(/\s+/g, "") : "Todas";
+    R.exportando = true; R.erro = null; render();
+    try { await exportarExcel(sel, "Roteiros-BYD_" + R.data + "_" + suf + ".xlsx", R.data) } catch (err) { R.erro = err.message || String(err) }
+    R.exportando = false; render();
+  });
   on("#ord", "onchange", e => { R.ordem = e.target.value; render() });
   const qi = $("#q"); if (qi) qi.oninput = e => { R.q = e.target.value; const p = qi.selectionStart; render(); const n = $("#q"); n.focus(); try { n.setSelectionRange(p, p) } catch (_) { } };
   document.querySelectorAll(".rl button").forEach(b => b.onclick = () => { R.sel = b.dataset.r; render() });
 }
+// ===== Exportar Excel =====
+const XLS_URL = "https://cdnjs.cloudflare.com/ajax/libs/exceljs/4.4.0/exceljs.min.js";
+let xlsLib = null;
+function carregarXls() {
+  if (window.ExcelJS) return Promise.resolve(window.ExcelJS);
+  if (xlsLib) return xlsLib;
+  xlsLib = new Promise((ok, erro) => { const s = document.createElement("script"); s.src = XLS_URL; s.onload = () => ok(window.ExcelJS); s.onerror = () => { xlsLib = null; erro(new Error("não foi possível carregar o gerador de Excel")) }; document.head.appendChild(s) });
+  return xlsLib;
+}
+async function exportarExcel(rotas, nomeArq, data) {
+  const ExcelJS = await carregarXls(), wb = new ExcelJS.Workbook(), emb = S.rot.res.emb;
+  wb.creator = "Painel da operação BYD";
+  const COLS = [["Parada nº", 10], ["Ponto de apanha", 42], ["Bairro", 20], ["Previsto", 11], ["1º check", 11], ["Situação", 19], ["Passageiro", 30], ["Status", 16], ["Hora do check", 14]];
+  const N = COLS.length, CENTRO = { horizontal: "center", vertical: "middle", wrapText: true };
+  const fill = c => ({ type: "pattern", pattern: "solid", fgColor: { argb: "FF" + c } });
+  const borda = { top: { style: "thin", color: { argb: "FFD5DCE1" } }, bottom: { style: "thin", color: { argb: "FFD5DCE1" } }, left: { style: "thin", color: { argb: "FFD5DCE1" } }, right: { style: "thin", color: { argb: "FFD5DCE1" } } };
+  const hm = x => x == null ? "—" : pad(Math.floor(x / 60)) + ":" + pad(x % 60);
+  const sit = s => s.d == null ? "Sem check" : s.d <= 0 ? (s.d === 0 ? "No horário" : s.d + " min") : (s.d <= TOL ? "No horário (+" + s.d + " min)" : "+" + s.d + " min");
+  const corSit = s => s.d == null ? null : s.s === "ok" ? "1F9E6A" : s.s === "leve" ? "B7791F" : "C2410C";
+  const grupos = [["Turno 1", rotas.filter(r => r.turno === "Turno 1")], ["ADM", rotas.filter(r => r.turno === "ADM")], ["Outros", rotas.filter(r => r.turno !== "Turno 1" && r.turno !== "ADM")]].filter(g => g[1].length);
+  for (const [nomeAba, lista] of grupos) {
+    const ws = wb.addWorksheet(nomeAba, { pageSetup: { orientation: "landscape", fitToPage: true, fitToWidth: 1, fitToHeight: 0 }, views: [{ showGridLines: false }] });
+    ws.columns = COLS.map(([, w]) => ({ width: w }));
+    let y = 1;
+    const linhaCheia = (txt, estilo, alt) => { ws.mergeCells(y, 1, y, N); const c = ws.getCell(y, 1); c.value = txt; Object.assign(c, estilo); c.alignment = CENTRO; ws.getRow(y).height = alt || 22; y++ };
+    linhaCheia("Roteiros BYD · " + nomeAba + " · " + ddmm(data) + "/" + data.slice(0, 4) + " · " + lista.length + " rota" + (lista.length === 1 ? "" : "s"), { font: { bold: true, size: 15, color: { argb: "FF23234A" } } }, 28);
+    y++;
+    for (const r of [...lista].sort((a, b) => a.id.localeCompare(b.id, "pt", { numeric: true }))) {
+      linhaCheia(r.id + " · " + (r.veic || "—") + (r.emp ? " · " + r.emp : "") + (r.cap ? " · " + r.cap + " lugares" : ""), { font: { bold: true, size: 13, color: { argb: "FFFFFFFF" } }, fill: fill("0E7F78") }, 26);
+      linhaCheia("Motorista: " + (r.resp ? r.resp[0] + " (assumiu às " + hhmm(r.resp[2]) + ")" : "nenhum motorista assumiu") + "   ·   Pontualidade: " + (r.pont == null ? "—" : r.pont + "%") + "   ·   Embarcaram: " + r.emb + "/" + r.lista + "   ·   Ocupação: " + (r.ocup == null ? "—" : r.ocup + "%") + "   ·   Fora da lista: " + r.nf, { font: { bold: true, size: 11, color: { argb: "FF0E5F5A" } }, fill: fill("E8F5F4") });
+      const cab = ws.getRow(y); COLS.forEach(([t], i) => { const c = cab.getCell(i + 1); c.value = t; c.font = { bold: true, size: 10, color: { argb: "FF4B5563" } }; c.fill = fill("EEF2F4"); c.alignment = CENTRO; c.border = borda }); cab.height = 20; y++;
+      r.stops.forEach((s, i) => {
+        const pax = s.pax.map(p => { const h = emb[p.ref]; return [p.n, h ? "Embarcou" : r.ativa ? "Não embarcou" : "Sem registro", h || "—"] }).concat(s.fora.map(f => [f.nome, "Fora da lista", f.hora || "—"]));
+        if (!pax.length) pax.push(["—", "—", "—"]);
+        const y0 = y;
+        pax.forEach(([nome, stt, h]) => {
+          const row = ws.getRow(y);
+          [i + 1, s.p, s.b, s.t, hm(s.real), sit(s), nome, stt, h].forEach((v, k) => { const c = row.getCell(k + 1); c.value = v; c.alignment = CENTRO; c.border = borda; c.font = { size: 11 } });
+          const cs = row.getCell(8); cs.font = { size: 11, bold: true, color: { argb: "FF" + (stt === "Embarcou" ? "1F9E6A" : stt === "Não embarcou" ? "C2410C" : stt === "Fora da lista" ? "4A55B8" : "6B7280") } };
+          const cor = corSit(s); if (cor) row.getCell(6).font = { size: 11, bold: true, color: { argb: "FF" + cor } };
+          y++;
+        });
+        if (y - 1 > y0) for (let k = 1; k <= 6; k++) ws.mergeCells(y0, k, y - 1, k);
+        if (i % 2) for (let yy = y0; yy < y; yy++) for (let k = 1; k <= N; k++) ws.getCell(yy, k).fill = fill("F7F9FA");
+      });
+      y += 2;
+    }
+  }
+  const buf = await wb.xlsx.writeBuffer(), a = document.createElement("a");
+  a.href = URL.createObjectURL(new Blob([buf], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }));
+  a.download = nomeArq; document.body.appendChild(a); a.click(); setTimeout(() => { URL.revokeObjectURL(a.href); a.remove() }, 1500);
+}
 function hhmm(v) { if (!v) return "—"; const m = String(v).match(/(\d{1,2}):(\d{2})/); if (/T/.test(v)) { const d = new Date(v); if (!isNaN(d)) return pad(d.getHours()) + ":" + pad(d.getMinutes()) } return m ? pad(+m[1]) + ":" + m[2] : String(v) }
 function detalhe(r, emb) {
   const hm = x => x == null ? "—" : pad(Math.floor(x / 60)) + ":" + pad(x % 60);
-  return `<div class="panel"><div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap">${plate(r.id)}<div><h3>${esc(r.veic || "—")} · ${esc(r.turno)}${r.emp ? " · " + esc(r.emp) : ""}</h3><p class="d">${r.stops.length} paradas · 1ª apanha ${esc(r.ini || "—")}${r.cap ? " · " + r.cap + " lugares" : ""}</p></div></div>
+  return `<div class="panel det"><div class="dh">${plate(r.id)}<div><h3>${esc(r.veic || "—")} · ${esc(r.turno)}${r.emp ? " · " + esc(r.emp) : ""}</h3><p class="d">${r.stops.length} paradas · 1ª apanha ${esc(r.ini || "—")}${r.cap ? " · " + r.cap + " lugares" : ""}</p></div></div>
     <div class="motr">${r.resp ? `<span class="mi">👤</span><span><small>Motorista responsável</small><b>${esc(r.resp[0])}</b></span><span class="em">assumiu às ${esc(hhmm(r.resp[2]))}</span>` : `<span class="mi">👤</span><span><small>Motorista responsável</small><b class="nd">Nenhum motorista assumiu esta rota</b></span>`}</div>
     <div class="mini"><div><span>Pontualidade</span><b>${r.pont == null ? "—" : r.pont + "%"}</b></div><div><span>Embarcaram</span><b>${r.emb}/${r.lista}</b></div><div><span>Ocupação</span><b>${r.ocup == null ? "—" : r.ocup + "%"}</b></div><div><span>Fora da lista</span><b>${r.nf}</b></div></div>
     <div class="tw" style="margin-top:12px"><table><thead><tr><th>#</th><th>Ponto</th><th class="num">Previsto</th><th class="num">1º check</th><th>Situação</th><th>Passageiros</th></tr></thead><tbody>
@@ -398,6 +478,7 @@ function detalhe(r, emb) {
 }
 
 render();
+document.addEventListener("click", e => { const m = $("#expm"); if (m && !m.hidden && !e.target.closest(".exp")) { m.hidden = true; const b = $("#bexp"); if (b) b.setAttribute("aria-expanded", "false") } });
 if (S.view === "resumo") carregarResumo(); else carregarRotas();
 setInterval(() => {
   if (document.visibilityState !== "visible") return;

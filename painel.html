@@ -68,14 +68,12 @@ button:focus-visible,input:focus-visible,select:focus-visible{outline:3px solid 
 .det .chips{justify-content:center}
 .det td:last-child{width:50%}
 .det .key{justify-content:center}
-.exp{position:relative}
+.det{position:relative}
+.det .dtop{display:grid;grid-template-columns:1fr auto 1fr;gap:12px;align-items:center}
+.det .xr{justify-self:end;height:38px;font-size:14px;white-space:nowrap}
+@media (max-width:1350px){.det .dtop{grid-template-columns:1fr}.det .dtop>span{display:none}.det .xr{justify-self:center;order:-1}}
+.det .chip{white-space:nowrap}
 .btn.xl{background:#0e7f78;border-color:#0e7f78;color:#fff}
-.expm{position:absolute;z-index:20;top:48px;left:0;min-width:280px;background:var(--surface);border:1px solid var(--line);border-radius:12px;box-shadow:0 10px 30px rgba(20,30,50,.16);padding:6px;display:grid;gap:4px}
-.expm[hidden]{display:none}
-.expm button{text-align:left;border:0;background:transparent;border-radius:9px;padding:10px 12px;cursor:pointer}
-.expm button:hover{background:var(--bg)}
-.expm b{display:block;font-size:15px}
-.expm small{display:block;color:var(--muted);font-size:13px;margin-top:2px}
 .kpi{background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:14px 16px}
 .kpi span{display:block;font-size:13px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;color:var(--muted)}
 .kpi b{display:block;font-family:var(--f-num);font-weight:700;font-size:42px;line-height:1.05;font-variant-numeric:tabular-nums;margin-top:4px}
@@ -366,11 +364,7 @@ function renderRotas() {
     <input type="date" id="fdata" value="${R.data}" max="${hojeISO()}" aria-label="Data">
     <div class="seg" role="group" aria-label="Turno">${[["", "Todos"], ["Turno 1", "Turno 1"], ["ADM", "ADM"]].map(([t, l]) => `<button data-t="${t}" aria-pressed="${R.turno === t}">${l}</button>`).join("")}</div>
     <button class="btn" id="bref" ${R.carregando ? "disabled" : ""}>↻ Atualizar</button>
-    ${R.res ? `<div class="exp"><button class="btn xl" id="bexp" aria-expanded="false" ${R.exportando ? "disabled" : ""}>${R.exportando ? "Gerando Excel…" : "⬇ Exportar Excel"}</button>
-      <div class="expm" id="expm" hidden>
-        ${r ? `<button data-exp="uma"><b>Só a rota ${esc(r.id)}</b><small>A rota aberta na tela</small></button>` : ""}
-        <button data-exp="lista"><b>${R.turno ? "Todas as rotas " + (R.turno === "ADM" ? "do ADM" : "do " + R.turno) : "Todas as rotas"}${R.q ? " da busca" : ""}</b><small>${lista.length} rota${lista.length === 1 ? "" : "s"} · ${R.turno ? "1 aba (" + R.turno + ")" : "abas Turno 1 e ADM"}</small></button>
-      </div></div>` : ""}
+    ${R.res ? `<button class="btn xl" id="bexp" ${R.exportando ? "disabled" : ""} title="${lista.length} rota${lista.length === 1 ? "" : "s"}${R.turno ? " · " + R.turno : " · Turno 1 e ADM"}">${R.exportando === "lista" ? "Gerando Excel…" : "⬇ Exportar Excel" + (R.turno ? " · " + R.turno : "")}</button>` : ""}
   </div>
   ${R.erro ? `<div class="banner"><b>Não foi possível atualizar:</b> ${esc(R.erro)}</div>` : ""}
   ${!R.res ? `<div class="panel empty">${R.carregando ? "Carregando os dados do dia…" : "Sem dados."}</div>` : `
@@ -395,13 +389,13 @@ function renderRotas() {
   on("#fdata", "onchange", e => { R.data = e.target.value || hojeISO(); R.res = null; carregarRotas(true) });
   document.querySelectorAll("[data-t]").forEach(b => b.onclick = () => { R.turno = b.dataset.t; render() });
   on("#bref", "onclick", () => carregarRotas(true));
-  on("#bexp", "onclick", e => { e.stopPropagation(); const m = $("#expm"); m.hidden = !m.hidden; e.currentTarget.setAttribute("aria-expanded", String(!m.hidden)) });
-  document.querySelectorAll("[data-exp]").forEach(b => b.onclick = async () => {
-    const uma = b.dataset.exp === "uma", sel = uma ? [r] : lista, suf = uma ? r.id.replace(/\s+/g, "-") : R.turno ? R.turno.replace(/\s+/g, "") : "Todas";
-    R.exportando = true; R.erro = null; render();
+  const exportar = async (qual, sel, suf) => {
+    R.exportando = qual; R.erro = null; render();
     try { await exportarExcel(sel, "Roteiros-BYD_" + R.data + "_" + suf + ".xlsx", R.data) } catch (err) { R.erro = err.message || String(err) }
     R.exportando = false; render();
-  });
+  };
+  on("#bexp", "onclick", () => exportar("lista", lista, R.turno ? R.turno.replace(/\s+/g, "") : "Todas"));
+  on("#bexpr", "onclick", () => r && exportar("rota", [r], r.id.replace(/\s+/g, "-")));
   on("#ord", "onchange", e => { R.ordem = e.target.value; render() });
   const qi = $("#q"); if (qi) qi.oninput = e => { R.q = e.target.value; const p = qi.selectionStart; render(); const n = $("#q"); n.focus(); try { n.setSelectionRange(p, p) } catch (_) { } };
   document.querySelectorAll(".rl button").forEach(b => b.onclick = () => { R.sel = b.dataset.r; render() });
@@ -461,7 +455,7 @@ async function exportarExcel(rotas, nomeArq, data) {
 function hhmm(v) { if (!v) return "—"; const m = String(v).match(/(\d{1,2}):(\d{2})/); if (/T/.test(v)) { const d = new Date(v); if (!isNaN(d)) return pad(d.getHours()) + ":" + pad(d.getMinutes()) } return m ? pad(+m[1]) + ":" + m[2] : String(v) }
 function detalhe(r, emb) {
   const hm = x => x == null ? "—" : pad(Math.floor(x / 60)) + ":" + pad(x % 60);
-  return `<div class="panel det"><div class="dh">${plate(r.id)}<div><h3>${esc(r.veic || "—")} · ${esc(r.turno)}${r.emp ? " · " + esc(r.emp) : ""}</h3><p class="d">${r.stops.length} paradas · 1ª apanha ${esc(r.ini || "—")}${r.cap ? " · " + r.cap + " lugares" : ""}</p></div></div>
+  return `<div class="panel det"><div class="dtop"><span></span><div class="dh">${plate(r.id)}<div><h3>${esc(r.veic || "—")} · ${esc(r.turno)}${r.emp ? " · " + esc(r.emp) : ""}</h3><p class="d">${r.stops.length} paradas · 1ª apanha ${esc(r.ini || "—")}${r.cap ? " · " + r.cap + " lugares" : ""}</p></div></div><button class="btn xl xr" id="bexpr" ${S.rot.exportando ? "disabled" : ""}>${S.rot.exportando === "rota" ? "Gerando Excel…" : "⬇ Exportar rota " + esc(r.id)}</button></div>
     <div class="motr">${r.resp ? `<span class="mi">👤</span><span><small>Motorista responsável</small><b>${esc(r.resp[0])}</b></span><span class="em">assumiu às ${esc(hhmm(r.resp[2]))}</span>` : `<span class="mi">👤</span><span><small>Motorista responsável</small><b class="nd">Nenhum motorista assumiu esta rota</b></span>`}</div>
     <div class="mini"><div><span>Pontualidade</span><b>${r.pont == null ? "—" : r.pont + "%"}</b></div><div><span>Embarcaram</span><b>${r.emb}/${r.lista}</b></div><div><span>Ocupação</span><b>${r.ocup == null ? "—" : r.ocup + "%"}</b></div><div><span>Fora da lista</span><b>${r.nf}</b></div></div>
     <div class="tw" style="margin-top:12px"><table><thead><tr><th>#</th><th>Ponto</th><th class="num">Previsto</th><th class="num">1º check</th><th>Situação</th><th>Passageiros</th></tr></thead><tbody>
@@ -471,14 +465,12 @@ function detalhe(r, emb) {
       ${s.fora.map(f => `<span class="chip f"><span class="i">+</span><span class="nm">${esc(f.nome)}</span><span class="h">${esc(f.hora)}</span></span>`).join("")}</div></td></tr>`).join("")}
     </tbody></table></div>
     <div class="key"><b style="color:var(--fg)">Legenda:</b>
-      <span class="chip e"><span class="i">✓</span>Embarcou <span class="h">06:16</span></span><span>hora do check</span>
+      <span class="chip e"><span class="i">✓</span>Embarcou <span class="h">06:16</span></span>
       <span class="chip x"><span class="i">✕</span><span class="nm">Não embarcou</span></span>
-      <span class="chip f"><span class="i">+</span>Fora da lista</span>
-      <span>· No horário = check até ${TOL} min depois do previsto</span></div></div>`;
+      <span class="chip f"><span class="i">+</span>Fora da lista</span></div></div>`;
 }
 
 render();
-document.addEventListener("click", e => { const m = $("#expm"); if (m && !m.hidden && !e.target.closest(".exp")) { m.hidden = true; const b = $("#bexp"); if (b) b.setAttribute("aria-expanded", "false") } });
 if (S.view === "resumo") carregarResumo(); else carregarRotas();
 setInterval(() => {
   if (document.visibilityState !== "visible") return;

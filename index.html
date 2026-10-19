@@ -221,6 +221,10 @@ button:focus-visible,a:focus-visible,input:focus-visible{outline:3px solid var(-
 .banner.alt ul{margin:6px 0 0;padding-left:18px;display:flex;flex-direction:column;gap:2px}
 .rcard.alt{border-color:#e7b24a}
 
+.banner.inst{background:var(--info-bg)}
+.banner .ctrls{display:flex;gap:8px;width:100%}
+.banner .ctrls .btn{flex:1}
+
 </style>
 </head>
 <body>
@@ -526,6 +530,7 @@ function renderHome() {
     <label class="search">${icon.search}<input id="q" type="search" placeholder="Buscar rota, bairro ou ponto" value="${esc(state.q)}" autocomplete="off" aria-label="Buscar rota, bairro ou ponto"></label>
   </header>
   ${avisoDados()}
+  ${avisoInstalar()}
   ${pinned.length && !term ? `<div class="sect">Minhas rotas</div><div class="list">${pinned.map(card).join("")}</div>` : ""}
   <div class="sect">${term ? list.length + " resultado" + (list.length === 1 ? "" : "s") : state.turno + " · " + all.length + " rotas"}</div>
   <div class="list">${list.map(card).join("") || `<div class="empty">Nenhuma rota com “${esc(state.q)}” no ${esc(state.turno)}.<br>Tente o número da rota (ex.: 015) ou o nome do bairro.</div>`}</div>
@@ -534,6 +539,8 @@ function renderHome() {
   $("#tadm").onclick = () => { state.turno = "ADM"; store.set("turno", state.turno); renderHome() };
   $("#brefresh").onclick = () => atualizar(true);
   const br = $("#bretry"); if (br) br.onclick = () => atualizar(true);
+  const bi = $("#binst"); if (bi) bi.onclick = async () => { const p = pedidoInstalar; pedidoInstalar = null; try { await p.prompt(); await p.userChoice } catch (e) { } renderHome() };
+  const bn = $("#binstnao"); if (bn) bn.onclick = () => { store.set("semInstalar", true); renderHome() };
   const inp = $("#q");
   inp.oninput = e => { state.q = e.target.value; const pos = inp.selectionStart; renderHome(); const n = $("#q"); n.focus(); try { n.setSelectionRange(pos, pos) } catch (_) { } };
   document.querySelectorAll(".rcard").forEach(b => b.onclick = () => abrirRota(b.dataset.r));
@@ -627,6 +634,17 @@ function limparAntigos() {
 }
 
 /* ---------- app instalado (PWA) ---------- */
+let pedidoInstalar = null;
+const instalado = () => matchMedia("(display-mode: standalone)").matches || navigator.standalone === true;
+window.addEventListener("beforeinstallprompt", e => { e.preventDefault(); pedidoInstalar = e; if (!state.rota) render() });
+window.addEventListener("appinstalled", () => { pedidoInstalar = null; toast("App instalado na tela do celular"); if (!state.rota) render() });
+function avisoInstalar() {
+  if (EMBED || instalado() || store.get("semInstalar", false)) return "";
+  const ios = /iphone|ipad|ipod/i.test(navigator.userAgent);
+  if (pedidoInstalar) return `<div class="banner inst"><div><b>Instale o app no celular.</b> Ele fica com ícone na tela e abre mesmo sem sinal.</div><div class="ctrls"><button class="btn sm" id="binstnao">Agora não</button><button class="btn sm primary" id="binst">Instalar app</button></div></div>`;
+  if (ios) return `<div class="banner inst"><div><b>Instale o app:</b> toque em Compartilhar e depois em <b>Adicionar à Tela de Início</b>.</div><div class="ctrls"><button class="btn sm" id="binstnao">Ok</button></div></div>`;
+  return "";
+}
 if (!EMBED && "serviceWorker" in navigator && location.protocol === "https:") navigator.serviceWorker.register("sw.js").catch(() => { });
 
 /* ---------- roteador ---------- */

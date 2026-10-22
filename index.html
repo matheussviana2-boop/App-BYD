@@ -49,7 +49,7 @@ button:focus-visible,a:focus-visible,input:focus-visible{outline:3px solid var(-
 .top{overflow:hidden}
 .brand small{display:block;font-family:var(--f-body);font-weight:500;font-size:12px;color:var(--muted);letter-spacing:.02em;margin-top:3px}
 .iconbtn{border:1px solid var(--line);background:var(--surface);border-radius:10px;height:40px;min-width:40px;padding:0 12px;display:inline-flex;align-items:center;gap:6px;cursor:pointer;font-weight:600;font-size:14px}
-.seg{display:grid;grid-template-columns:1fr 1fr;background:var(--surface-2);border-radius:12px;padding:4px;gap:4px}
+.seg{display:grid;grid-auto-flow:column;grid-auto-columns:1fr;background:var(--surface-2);border-radius:12px;padding:4px;gap:4px}
 .seg button{border:0;background:transparent;border-radius:9px;height:42px;font-weight:700;font-size:15px;cursor:pointer;color:var(--muted)}
 .seg button[aria-pressed="true"]{background:var(--surface);color:var(--brand);box-shadow:0 1px 2px rgba(0,0,0,.12)}
 .search{position:relative}
@@ -293,7 +293,7 @@ function montarRotas(linhas) {
   const routes = new Map();
   for (const r of linhas) {
     const [turno, nome, cid, bai, ponto, hora, rota, emp, prog, sol, ref] = r.map(v => String(v ?? "").trim());
-    if (!nome || !/^(T1|ADM|TAXI)\s*\d+/.test(rota)) continue;
+    if (!nome || !/^(T\d|ADM|TAXI)\s*\d+/.test(rota)) continue;
     if (!routes.has(rota)) routes.set(rota, { id: rota, turno, emp: "", prog: "", sol: "", pax: [] });
     const R = routes.get(rota);
     R.emp = R.emp || empresa(emp); R.prog = R.prog || prog.toUpperCase(); R.sol = R.sol || sol.toUpperCase();
@@ -496,6 +496,7 @@ function remover(r, xid) {
 }
 
 /* ---------- estado e ícones ---------- */
+const TURNOS = ["Turno 1", "Turno 2", "ADM"];
 let state = { turno: store.get("turno", "Turno 1"), q: "", rota: null, confirmar: null, add: null };
 const favs = () => store.get("fav", []);
 const icon = {
@@ -541,16 +542,15 @@ function renderHome() {
   const term = norm(state.q);
   const all = DATA.rotas.filter(r => r.turno === state.turno);
   const match = r => !term || norm(r.id).includes(term) || norm(r.id).replace(/\s/g, "").includes(term.replace(/\s/g, "")) || r.stops.some(s => norm(s.p + " " + s.b + " " + s.c).includes(term)) || achados(r, term).length > 0;
-  const list = term ? DATA.rotas.filter(match) : all;   // na busca, procura no Turno 1 e no ADM
+  const list = term ? DATA.rotas.filter(match) : all;   // na busca, procura em todos os turnos
   const fv = favs(); const pinned = DATA.rotas.filter(r => fv.includes(r.id));
   $("#app").innerHTML = `
   <header class="top">
     <div class="brand"><div class="brandrow"><img class="logo" alt="Consórcio UniLitoral" src="${LOGO}"><span class="sep"></span><div><h1>Roteiros <i>BYD</i></h1><small>${statusDados()}</small></div></div></div>
     <div class="seg" role="group" aria-label="Turno">
-      <button id="t1" aria-pressed="${state.turno === "Turno 1"}">Turno 1</button>
-      <button id="tadm" aria-pressed="${state.turno === "ADM"}">ADM</button>
+      ${TURNOS.map(t => `<button data-turno="${t}" aria-pressed="${state.turno === t}">${t}</button>`).join("")}
     </div>
-    <label class="search">${icon.search}<input id="q" type="search" placeholder="Buscar rota, bairro, ponto ou passageiro" value="${esc(state.q)}" autocomplete="off" aria-label="Buscar rota, bairro, ponto ou passageiro"></label>
+    <label class="search">${icon.search}<input id="q" type="search" placeholder="Buscar rota, bairro, ponto ou nome" value="${esc(state.q)}" autocomplete="off" aria-label="Buscar rota, bairro, ponto ou passageiro"></label>
   </header>
   ${avisoDados()}
   ${avisoInstalar()}
@@ -558,8 +558,7 @@ function renderHome() {
   <div class="sect">${term ? list.length + " resultado" + (list.length === 1 ? "" : "s") : state.turno + " · " + all.length + " rotas"}</div>
   <div class="list">${list.map(card).join("") || `<div class="empty">Nenhuma rota com “${esc(state.q)}”.<br>Tente o número da rota (ex.: 015), o bairro, o ponto ou o nome do passageiro.</div>`}</div>
 `;
-  $("#t1").onclick = () => { state.turno = "Turno 1"; store.set("turno", state.turno); renderHome() };
-  $("#tadm").onclick = () => { state.turno = "ADM"; store.set("turno", state.turno); renderHome() };
+  document.querySelectorAll("[data-turno]").forEach(b => b.onclick = () => { state.turno = b.dataset.turno; store.set("turno", state.turno); renderHome() });
   const bi = $("#binst"); if (bi) bi.onclick = async () => { const p = pedidoInstalar; pedidoInstalar = null; try { await p.prompt(); await p.userChoice } catch (e) { } renderHome() };
   const bn = $("#binstnao"); if (bn) bn.onclick = () => { store.set("semInstalar", true); renderHome() };
   const inp = $("#q");

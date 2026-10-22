@@ -172,7 +172,7 @@ const store = { get(k, d) { try { const v = localStorage.getItem("pbyd:" + k); r
 async function api(params) {
   const url = API + "?" + new URLSearchParams(params).toString() + "&_=" + Date.now();
   const r = await fetch(url, { credentials: "omit", redirect: "follow", cache: "no-store" });
-  const d = await r.json();
+  let d; try { d = JSON.parse(await r.text()) } catch (e) { throw new Error("o Google demorou para responder. O painel tenta de novo sozinho em 1 minuto") }
   if (d.status !== "ok") throw new Error(d.mensagem || "erro no script");
   return d;
 }
@@ -270,7 +270,6 @@ function renderResumo() {
   <div class="filters">
     <div class="seg" role="group" aria-label="Período">${[7, 15, 30].map(n => `<button data-dias="${n}" aria-pressed="${R.dias === n}">Últimos ${n} dias</button>`).join("")}</div>
     <label class="selt"><span>Turno</span><select id="selModo" aria-label="Turno">${[["Juntos", "Todos os turnos"], ["Turno 1", "Turno 1"], ["Turno 2", "Turno 2"], ["ADM", "ADM"]].map(([a, b]) => `<option value="${a}" ${R.modo === a ? "selected" : ""}>${b}</option>`).join("")}</select></label>
-    <button class="btn" id="bref" ${R.carregando ? "disabled" : ""}>↻ Atualizar</button>
   </div>
   ${R.erro ? `<div class="banner"><b>Não foi possível atualizar:</b> ${esc(R.erro)}</div>` : ""}
   ${!d ? `<div class="panel empty">${R.carregando ? "Carregando o resumo…" : "Sem dados."}</div>` : `
@@ -291,7 +290,6 @@ function renderResumo() {
   ${dist}${rank}`}`;
   document.querySelectorAll("[data-dias]").forEach(b => b.onclick = () => { R.dias = +b.dataset.dias; store.set("dias", R.dias); R.d = null; carregarResumo(true) });
   const sm = $("#selModo"); if (sm) sm.onchange = () => { R.modo = sm.value; store.set("modo", R.modo); render() };
-  const bref = $("#bref"); if (bref) bref.onclick = () => carregarResumo(true);
   const bt = $("#btodas"); if (bt) bt.onclick = () => { R.todas = !R.todas; render() };
   document.querySelectorAll("th[data-k]").forEach(th => th.onclick = () => { const k = th.dataset.k; R.ordem = { k, dir: R.ordem.k === k ? -R.ordem.dir : (["pont", "rota", "turno", "comp", "ocup"].includes(k) ? 1 : -1) }; render() });
   document.querySelectorAll("tr[data-r]").forEach(tr => tr.onclick = () => { S.rot.sel = tr.dataset.r; go("rotas") });
@@ -304,7 +302,9 @@ let ROT = null;
 async function roteiroAtual(versao) {
   if (!ROT) { try { ROT = JSON.parse(localStorage.getItem("pbyd:rot") || "null") } catch (e) { ROT = null } }
   if (ROT && versao && ROT.versao === versao) return ROT;
-  const d = await api({ v: (ROT && ROT.versao) || "" });
+  let d;
+  try { d = await api({ v: (ROT && ROT.versao) || "" }) }
+  catch (e) { if (ROT) return ROT; throw e }      // sem resposta: segue com o roteiro guardado
   if (!(d.igual && ROT)) {
     ROT = { versao: d.versao, linhas: d.linhas || [] };
     try { localStorage.setItem("pbyd:rot", JSON.stringify(ROT)) } catch (e) { }
@@ -365,7 +365,6 @@ function renderRotas() {
   <div class="filters">
     <input type="date" id="fdata" value="${R.data}" max="${hojeISO()}" aria-label="Data">
     <div class="seg" role="group" aria-label="Turno">${[["", "Todos"], ["Turno 1", "Turno 1"], ["Turno 2", "Turno 2"], ["ADM", "ADM"]].map(([t, l]) => `<button data-t="${t}" aria-pressed="${R.turno === t}">${l}</button>`).join("")}</div>
-    <button class="btn" id="bref" ${R.carregando ? "disabled" : ""}>↻ Atualizar</button>
     ${R.res ? `<button class="btn xl" id="bexp" ${R.exportando ? "disabled" : ""} title="${lista.length} rota${lista.length === 1 ? "" : "s"}${R.turno ? " · " + R.turno : " · todos os turnos"}">${R.exportando === "lista" ? "Gerando Excel…" : "⬇ Exportar Excel" + (R.turno ? " · " + R.turno : "")}</button>` : ""}
   </div>
   ${R.erro ? `<div class="banner"><b>Não foi possível atualizar:</b> ${esc(R.erro)}</div>` : ""}
@@ -390,7 +389,6 @@ function renderRotas() {
   const on = (s, ev, f) => { const el = $(s); if (el) el[ev] = f };
   on("#fdata", "onchange", e => { R.data = e.target.value || hojeISO(); R.res = null; carregarRotas(true) });
   document.querySelectorAll("[data-t]").forEach(b => b.onclick = () => { R.turno = b.dataset.t; render() });
-  on("#bref", "onclick", () => carregarRotas(true));
   const exportar = async (qual, sel, suf) => {
     R.exportando = qual; R.erro = null; render();
     try { await exportarExcel(sel, "Roteiros-BYD_" + R.data + "_" + suf + ".xlsx", R.data) } catch (err) { R.erro = err.message || String(err) }
@@ -477,7 +475,13 @@ setInterval(() => {
   if (document.visibilityState !== "visible") return;
   if (S.view === "rotas" && S.rot.data === hojeISO()) carregarRotas(false);
   if (S.view === "resumo") carregarResumo(false);
-}, 3 * 60000);
+}, 5 * 60000);   // atualiza sozinho a cada 5 min
+// se a última atualização falhou, tenta de novo em 1 min
+setInterval(() => {
+  if (document.visibilityState !== "visible") return;
+  if (S.view === "rotas" && S.rot.erro) carregarRotas(false);
+  if (S.view === "resumo" && S.res.erro) carregarResumo(false);
+}, 60000);
 </script>
 </body>
 </html>

@@ -180,7 +180,7 @@ async function api(params) {
 const S = {
   view: store.get("view", "resumo"),
   rot: { data: hojeISO(), turno: "", q: "", ordem: "pont", sel: null, carregando: false, erro: "", res: null, em: null },
-  res: { dias: store.get("dias", 15), modo: store.get("modo", "Juntos"), carregando: false, erro: "", d: null, em: null, ordem: { k: "pont", dir: 1 }, todas: false }
+  res: { dias: store.get("dias", 15), modo: (m => m === "Comparar" ? "Juntos" : m)(store.get("modo", "Juntos")), carregando: false, erro: "", d: null, em: null, ordem: { k: "pont", dir: 1 }, todas: false }
 };
 function go(v) { S.view = v; store.set("view", v); render(); if (v === "resumo" && !S.res.d) carregarResumo(); if (v === "rotas" && !S.rot.res) carregarRotas() }
 document.querySelectorAll(".tabs button").forEach(b => b.onclick = () => go(b.dataset.v));
@@ -269,7 +269,7 @@ function renderResumo() {
     <div class="status">${R.carregando ? "Atualizando…" : R.em ? "Atualizado às " + pad(R.em.getHours()) + ":" + pad(R.em.getMinutes()) : ""}</div></div>
   <div class="filters">
     <div class="seg" role="group" aria-label="Período">${[7, 15, 30].map(n => `<button data-dias="${n}" aria-pressed="${R.dias === n}">Últimos ${n} dias</button>`).join("")}</div>
-    <label class="selt"><span>Turno</span><select id="selModo" aria-label="Turno">${[["Juntos", "Todos os turnos"], ["Turno 1", "Turno 1"], ["Turno 2", "Turno 2"], ["ADM", "ADM"], ["Comparar", "Comparar Turno 1 × Turno 2 × ADM"]].map(([a, b]) => `<option value="${a}" ${R.modo === a ? "selected" : ""}>${b}</option>`).join("")}</select></label>
+    <label class="selt"><span>Turno</span><select id="selModo" aria-label="Turno">${[["Juntos", "Todos os turnos"], ["Turno 1", "Turno 1"], ["Turno 2", "Turno 2"], ["ADM", "ADM"]].map(([a, b]) => `<option value="${a}" ${R.modo === a ? "selected" : ""}>${b}</option>`).join("")}</select></label>
     <button class="btn" id="bref" ${R.carregando ? "disabled" : ""}>↻ Atualizar</button>
   </div>
   ${R.erro ? `<div class="banner"><b>Não foi possível atualizar:</b> ${esc(R.erro)}</div>` : ""}
@@ -299,10 +299,26 @@ function renderResumo() {
 }
 
 /* ======================= ROTA A ROTA ======================= */
+// roteiro (pontos e passageiros): baixado só quando a versão muda; senão usa o guardado no navegador
+let ROT = null;
+async function roteiroAtual(versao) {
+  if (!ROT) { try { ROT = JSON.parse(localStorage.getItem("pbyd:rot") || "null") } catch (e) { ROT = null } }
+  if (ROT && versao && ROT.versao === versao) return ROT;
+  const d = await api({ v: (ROT && ROT.versao) || "" });
+  if (!(d.igual && ROT)) {
+    ROT = { versao: d.versao, linhas: d.linhas || [] };
+    try { localStorage.setItem("pbyd:rot", JSON.stringify(ROT)) } catch (e) { }
+  }
+  return ROT;
+}
 async function carregarRotas(manual) {
   const R = S.rot; if (R.carregando) return;
   R.carregando = true; R.erro = ""; if (manual || !R.res) render();
-  try { const d = await api({ acao: "painel", data: R.data }); R.res = montar(d); R.em = new Date() }
+  try {
+    const d = await api({ acao: "painel", data: R.data });     // só os embarques do dia (resposta pequena)
+    d.linhas = (await roteiroAtual(d.versao)).linhas;           // o roteiro vem à parte e fica guardado no navegador
+    R.res = montar(d); R.em = new Date();
+  }
   catch (e) { R.erro = e.message }
   R.carregando = false; if (S.view === "rotas") render();
 }

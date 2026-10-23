@@ -238,6 +238,10 @@ button:focus-visible,a:focus-visible,input:focus-visible{outline:3px solid var(-
 .achou b{font-weight:800}
 .prow.achado{box-shadow:inset 0 0 0 2px var(--info)}
 
+/* rota só para consulta: lista simples de nomes */
+.pnome{min-height:40px;display:flex;align-items:center;padding:6px 12px;border-radius:10px;background:var(--bg);font-size:16px;font-weight:600}
+.pnome.achado{box-shadow:inset 0 0 0 2px var(--info);background:var(--info-bg)}
+
 </style>
 </head>
 <body>
@@ -522,13 +526,12 @@ function achados(r, term) {
 function card(r) {
   const fav = favs().includes(r.id);
   const ach = achados(r, norm(state.q));
-  const emb = Object.keys(store.get(chEmb(r), {})).length + store.get(chExt(r), []).length;
   const alt = alteracao(r);
   return `<button class="rcard${alt ? " alt" : ""}" data-r="${esc(r.id)}">${plate(r)}
     <div class="rmeta"><div class="l1">${esc(r.ini)} → ${esc(r.fim)} · ${r.stops.length} paradas</div>
     <div class="l2">${esc(r.veic)} · ${r.pax} passageiros${r.emp ? " · " + esc(r.emp) : ""}</div>
     ${ach.length ? `<div class="achou">${ach.slice(0, 3).map(a => `<span><b>${esc(a.nome)}</b> · ${esc(a.hora)} · ${esc(a.ponto)}</span>`).join("")}${ach.length > 3 ? `<span>+ ${ach.length - 3} passageiro${ach.length - 3 > 1 ? "s" : ""}</span>` : ""}</div>` : ""}
-    ${emb || alt ? `<div class="chips">${alt ? `<span class="chip warn">Rota alterada recentemente · confira</span>` : ""}${emb ? `<span class="chip ok">${emb} embarque${emb > 1 ? "s" : ""} hoje</span>` : ""}</div>` : ""}</div>
+    ${alt ? `<div class="chips"><span class="chip warn">Rota alterada recentemente · confira</span></div>` : ""}</div>
     <span class="${fav ? "pin" : "chev"}">${fav ? icon.star(true) : icon.chev}</span></button>`;
 }
 function avisoDados() {
@@ -569,12 +572,13 @@ function renderHome() {
 /* ---------- tela da rota: pontos, passageiros e embarques ---------- */
 function abrirRota(id) { state.rota = id; state.confirmar = null; state.add = null; render(); window.scrollTo(0, 0) }
 const rotaAtual = () => DATA.rotas.find(x => x.id === state.rota);
+// tela da rota: só consulta (pontos, horários e passageiros). Sem marcação de embarque:
+// a operação decidiu que o motorista não deve mexer no celular enquanto dirige.
 function renderRoute() {
   const r = rotaAtual(); if (!r) { state.rota = null; return renderHome() }
   const fav = favs().includes(r.id);
-  const m = store.get(chEmb(r), {}), ex = store.get(chExt(r), []);
   const semNomes = r.stops.every(s => s.pax.every(p => !p[0]));
-  const embLista = r.stops.reduce((a, s, i) => a + s.pax.filter(p => m[paxKey(i, p)]).length, 0);
+  const q = norm(state.q);
   const y = window.scrollY;
   $("#app").innerHTML = `
   <header class="top"><div class="brand">
@@ -585,61 +589,27 @@ function renderRoute() {
   <div class="facts">
     <div><b>${esc(r.ini)}</b><span>1ª apanha</span></div>
     <div><b>${r.stops.length}</b><span>Paradas</span></div>
-    <div><b>${embLista}<small>/${r.pax}</small></b><span>Embarcaram</span></div>
+    <div><b>${r.pax}</b><span>Passageiros</span></div>
   </div>
-  <div class="status"><span id="syncp">${syncTxt()}</span>${ex.length ? `<span class="pill">${ex.length} fora da lista</span>` : ""}</div>
   ${(a => a ? `<div class="banner alt"><div><b>Esta rota mudou recentemente. Confira os pontos e horários.</b>${a.itens && a.itens.length ? `<ul>${a.itens.slice(0, 6).map(x => `<li>${esc(x)}</li>`).join("")}${a.itens.length > 6 ? `<li>e mais ${a.itens.length - 6} mudança(s)</li>` : ""}</ul>` : ""}</div></div>` : "")(alteracao(r))}
-  ${semNomes ? `<div class="banner warn"><div><b>Nomes indisponíveis.</b> O app não conseguiu ler a planilha. Conecte à internet e toque em atualizar na tela inicial.</div></div>` : ""}
+  ${semNomes ? `<div class="banner warn"><div><b>Nomes indisponíveis.</b> O app não conseguiu ler a planilha. Conecte à internet; o app tenta de novo sozinho.</div></div>` : ""}
   <ol class="tl">
-    ${r.stops.map((s, i) => {
-      const extras = ex.filter(x => x.i === i);
-      const feitos = s.pax.filter(p => m[paxKey(i, p)]).length;
-      const tudo = feitos === s.pax.length;
-      return `<li class="stop${tudo ? " checked" : ""}">
-        <div class="time">${esc(s.t)}</div><div class="rail"><span class="dot">${tudo ? "✓" : i + 1}</span></div>
+    ${r.stops.map((s, i) => `<li class="stop">
+        <div class="time">${esc(s.t)}</div><div class="rail"><span class="dot">${i + 1}</span></div>
         <div class="sbody">
           <div class="shead"><div><div class="pn">${esc(s.p)}</div><div class="pb">${esc(s.b)} · ${esc(s.c)}</div></div>
-            <span class="cnt ${tudo ? "ok" : ""}">${feitos}/${s.pax.length}</span></div>
+            <span class="cnt">${s.pax.length}</span></div>
           <ul class="plist">
-            ${s.pax.map((p, j) => {
-              const k = paxKey(i, p), e = m[k];
-              if (state.confirmar === k) return `<li class="prow conf"><span>Desfazer o embarque de <b>${esc(p[0] || "passageiro")}</b>?</span><span class="cbtns"><button class="btn sm" data-no="1">Não</button><button class="btn sm danger" data-undo="${i}:${j}">Desfazer</button></span></li>`;
-              const q = norm(state.q), achou = q.length >= 3 && p[0] && norm(p[0]).includes(q);
-              return `<li><button class="prow${e ? " on" : ""}${achou ? " achado" : ""}" data-p="${i}:${j}" aria-pressed="${!!e}" ${!p[0] ? "disabled" : ""}><span class="box">${e ? icon.check : ""}</span><span class="nm">${esc(p[0] || "Passageiro " + (j + 1))}</span>${e ? `<span class="hr">${esc(e.h)}</span>` : ""}</button></li>`;
-            }).join("")}
-            ${extras.map(x => state.confirmar === "x:" + x.id
-              ? `<li class="prow conf"><span>Remover <b>${esc(x.nome)}</b>?</span><span class="cbtns"><button class="btn sm" data-no="1">Não</button><button class="btn sm danger" data-rmx="${esc(x.id)}">Remover</button></span></li>`
-              : `<li><button class="prow on extra" data-x="${esc(x.id)}"><span class="box">${icon.check}</span><span class="nm">${esc(x.nome)}<em>Fora da lista</em></span><span class="hr">${esc(x.h)}</span></button></li>`).join("")}
+            ${s.pax.map((p, j) => { const achou = q.length >= 3 && p[0] && norm(p[0]).includes(q);
+              return `<li class="pnome${achou ? " achado" : ""}">${esc(p[0] || "Passageiro " + (j + 1))}</li>` }).join("")}
           </ul>
-          ${state.add === i
-            ? `<form class="addform" data-add="${i}"><input id="addnome" maxlength="60" placeholder="Nome do passageiro" autocomplete="off" aria-label="Nome do passageiro que embarcou"><div class="ctrls"><button type="button" class="btn sm" data-cancel="1">Cancelar</button><button class="btn sm primary">Embarcou</button></div></form>`
-            : `<button class="addbtn" data-addbtn="${i}">${icon.plus}Passageiro fora da lista</button>`}
-        </div></li>`;
-    }).join("")}
+        </div></li>`).join("")}
     <li class="stop last dest"><div class="time"></div><div class="rail"><span class="dot"></span></div>
       <div class="sbody"><div class="pn">BYD Camaçari</div><div class="pb" style="color:inherit;opacity:.85">Destino final</div></div></li>
   </ol>`;
   window.scrollTo(0, y);
   $("#back").onclick = () => { state.rota = null; renderHome(); window.scrollTo(0, 0) };
   $("#fav").onclick = () => { let f = favs(); f = f.includes(r.id) ? f.filter(x => x !== r.id) : [...f, r.id]; store.set("fav", f); renderRoute(); toast(f.includes(r.id) ? "Rota fixada no início" : "Rota removida de Minhas rotas") };
-  const comNome = fn => fn;
-  document.querySelectorAll("[data-p]").forEach(b => b.onclick = comNome(() => {
-    const [i, j] = b.dataset.p.split(":").map(Number), p = r.stops[i].pax[j], k = paxKey(i, p);
-    if (store.get(chEmb(r), {})[k]) state.confirmar = k; else { marcar(r, i, p); state.confirmar = null }
-    renderRoute();
-  }));
-  document.querySelectorAll("[data-undo]").forEach(b => b.onclick = () => { const [i, j] = b.dataset.undo.split(":").map(Number); desmarcar(r, i, r.stops[i].pax[j]); state.confirmar = null; renderRoute() });
-  document.querySelectorAll("[data-x]").forEach(b => b.onclick = () => { state.confirmar = "x:" + b.dataset.x; renderRoute() });
-  document.querySelectorAll("[data-rmx]").forEach(b => b.onclick = () => { remover(r, b.dataset.rmx); state.confirmar = null; renderRoute() });
-  document.querySelectorAll("[data-no]").forEach(b => b.onclick = () => { state.confirmar = null; renderRoute() });
-  document.querySelectorAll("[data-addbtn]").forEach(b => b.onclick = comNome(() => { state.add = Number(b.dataset.addbtn); state.confirmar = null; renderRoute(); const n = $("#addnome"); if (n) n.focus() }));
-  document.querySelectorAll("[data-cancel]").forEach(b => b.onclick = () => { state.add = null; renderRoute() });
-  const f = document.querySelector(".addform");
-  if (f) f.onsubmit = e => {
-    e.preventDefault(); const nome = $("#addnome").value.trim().replace(/\s+/g, " ");
-    if (nome.length < 2) { toast("Digite o nome do passageiro"); return }
-    $("#addnome").blur(); adicionar(r, Number(f.dataset.add), nome); state.add = null; renderRoute(); toast("Passageiro adicionado às " + hhmm());
-  };
 }
 
 /* ---------- limpeza: apaga do aparelho as marcações com mais de 7 dias (já estão na planilha de registros) ---------- */

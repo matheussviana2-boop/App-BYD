@@ -353,12 +353,18 @@ function prepararRotas(rotas) {
   return rotas;
 }
 let tentarDeNovo = null;
+// formato compacto do script: [turno, rota, empresa, programado, solicitado, [[ponto, horário, cidade, bairro, [nomes]]]]
+function expandir(rotas) {
+  const linhas = [];
+  rotas.forEach(R => R[5].forEach(S => S[4].forEach(nome => linhas.push([R[0], nome, S[2], S[3], S[0], S[1], R[1], R[2], R[3], R[4], ""]))));
+  return linhas;
+}
 async function atualizar(manual) {
   if (EMBED || DATA.carregando) return;
   DATA.carregando = true; if (manual) render();
   try {
     const antes = store.get("vivo2", null);
-    const d = await chamar(CFG.API + (antes && antes.versao ? "?v=" + encodeURIComponent(antes.versao) : ""));
+    const d = await chamar(CFG.API + "?f=2" + (antes && antes.versao ? "&v=" + encodeURIComponent(antes.versao) : ""));
     const quandoJa = new Date().toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" });
     if (d.igual && antes) {                  // planilha não mudou: nada para baixar
       antes.quando = quandoJa; antes.em = Date.now(); store.set("vivo2", antes);
@@ -366,7 +372,7 @@ async function atualizar(manual) {
       if (manual) toast("Roteiros em dia: nada mudou na planilha");
       render(); return;
     }
-    const rotas = montarRotas(d.linhas);
+    const rotas = montarRotas(d.rotas ? expandir(d.rotas) : d.linhas);
     if (rotas.length < 20) throw new Error("leitura incompleta da planilha");
     const quando = new Date().toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" });
     const nAlt = registrarAlteracoes(antes ? antes.rotas : null, rotas, d.alteradas || {});
@@ -500,7 +506,7 @@ function remover(r, xid) {
 }
 
 /* ---------- estado e ícones ---------- */
-const TURNOS = ["Turno 1", "Turno 2", "ADM"];
+const TURNOS = ["Turno 1", "Turno 2", "Turno 3", "ADM"];
 let state = { turno: store.get("turno", "Turno 1"), q: "", rota: null, confirmar: null, add: null };
 const favs = () => store.get("fav", []);
 const icon = {
